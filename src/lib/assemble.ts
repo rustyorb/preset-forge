@@ -1,0 +1,144 @@
+import type { PromptEntry, Role, WorkingPreset } from './types';
+import { MARKER_NAMES } from './stDefaults';
+
+export interface AssembledBlock {
+  role: Role;
+  content: string;
+  /** where this block came from */
+  source: 'prompt' | 'marker' | 'chat' | 'injection';
+  label: string;
+  identifier?: string;
+  depth?: number;
+}
+
+const SAMPLE = {
+  char: 'Seraphina',
+  user: 'You',
+  description: 'Seraphina is a guardian spirit of the Whispering Woods, gentle but fiercely protective.',
+  personality: 'Warm, watchful, playful when at ease; steel underneath.',
+  scenario: 'A wounded traveler has stumbled into the grove at dusk.',
+  persona: 'A wandering cartographer mapping the old forest roads.',
+  chat: [
+    { role: 'user' as Role, text: '*I limp into the clearing, clutching my arm.* Hello? Is anyone there?' },
+    { role: 'assistant' as Role, text: '*Light gathers between the trees as Seraphina steps forward.* "Easy, traveler. You are safe here."' },
+    { role: 'user' as Role, text: 'Thank you... I think I\'m lost. And this cut won\'t stop bleeding.' },
+    { role: 'assistant' as Role, text: '*She kneels beside you, palms glowing softly.* "Let me see. The woods told me you were coming."' },
+    { role: 'user' as Role, text: 'The woods... talk to you?' },
+  ],
+};
+
+function fillMacros(text: string): string {
+  return text
+    .replaceAll('{{char}}', SAMPLE.char)
+    .replaceAll('{{user}}', SAMPLE.user)
+    .replaceAll('{{charIfNotGroup}}', SAMPLE.char)
+    .replaceAll('{{description}}', SAMPLE.description)
+    .replaceAll('{{personality}}', SAMPLE.personality)
+    .replaceAll('{{scenario}}', SAMPLE.scenario)
+    .replaceAll('{{persona}}', SAMPLE.persona);
+}
+
+function markerContent(id: string): string | null {
+  switch (id) {
+    case 'charDescription': return SAMPLE.description;
+    case 'charPersonality': return `[${SAMPLE.char}'s personality: ${SAMPLE.personality}]`;
+    case 'scenario': return `[Circumstances and context of the dialogue: ${SAMPLE.scenario}]`;
+    case 'personaDescription': return `[${SAMPLE.user}'s persona: ${SAMPLE.persona}]`;
+    case 'worldInfoBefore':
+    case 'worldInfoAfter':
+    case 'dialogueExamples':
+      return null; // empty in the sample scene
+    default: return null;
+  }
+}
+
+/**
+ * Structural simulation of ST's prompt assembly:
+ * relative prompts in order (markers expanded with sample data), chat history
+ * with In-Chat prompts spliced at injection_depth from the end (depth 0 = last).
+ * Within one depth: grouped User -> Assistant -> System, injection_order ascending
+ * (per docs.sillytavern.app prompt-manager). Labeled a preview, not a byte-accurate clone.
+ */
+export function assemblePreview(wp: WorkingPreset): AssembledBlock[] {
+  const byId = new Map(wp.prompts.map((p) => [p.identifier, p]));
+  const enabledOrder = wp.order.filter((e) => e.enabled);
+  const blocks: AssembledBlock[] = [];
+
+  const absolutePrompts = wp.prompts.filter(
+    (p) =>
+      p.injection_position === 1 &&
+      !p.marker &&
+      p.content &&
+      enabledOrder.some((e) => e.identifier === p.identifier),
+  );
+
+  const pushChatWithInjections = () => {
+    const chatLen = SAMPLE.chat.length;
+    // depth d inserts before the last d messages; collect per gap index 0..chatLen
+    const byGap = new Map<number, PromptEntry[]>();
+    for (const p of absolutePrompts) {
+      const depth = Math.min(Math.max(p.injection_depth ?? 4, 0), chatLen);
+      const gap = chatLen - depth; // messages before the injection point
+      byGap.set(gap, [...(byGap.get(gap) ?? []), p]);
+    }
+    const roleRank: Record<string, number> = { user: 0, assistant: 1, system: 2 };
+    const emitGap = (gap: number) => {
+      const ps = byGap.get(gap);
+      if (!ps) return;
+      ps.sort(
+        (a, b) =>
+          roleRank[a.role || 'system'] - roleRank[b.role || 'system'] ||
+          (a.injection_order ?? 100) - (b.injection_order ?? 100),
+      );
+      for (const p of ps) {
+        blocks.push({
+          role: (p.role || 'system') as Role,
+          content: fillMacros(p.content ?? ''),
+          source: 'injection',
+          label: `${p.name} · @depth ${p.injection_depth ?? 4}`,
+          identifier: p.identifier,
+          depth: p.injection_depth ?? 4,
+        });
+      }
+    };
+    for (let i = 0; i < chatLen; i++) {
+      emitGap(i);
+      const msg = SAMPLE.chat[i];
+      blocks.push({ role: msg.role, content: msg.text, source: 'chat', label: `chat message ${i + 1}` });
+    }
+    emitGap(chatLen); // depth 0: after the last message
+  };
+
+  for (const e of enabledOrder) {
+    const p = byId.get(e.identifier);
+    if (e.identifier === 'chatHistory') {
+      pushChatWithInjections();
+      continue;
+    }
+    if (!p) continue;
+    if (p.marker) {
+      const mc = markerContent(p.identifier);
+      if (mc !== null) {
+        blocks.push({
+          role: 'system',
+          content: mc,
+          source: 'marker',
+          label: MARKER_NAMES[p.identifier] ?? p.identifier,
+          identifier: p.identifier,
+        });
+      }
+      continue;
+    }
+    if (p.injection_position === 1) continue; // rendered inside chat
+    if (!p.content) continue;
+    blocks.push({
+      role: (p.role || 'system') as Role,
+      content: fillMacros(p.content),
+      source: 'prompt',
+      label: p.name,
+      identifier: p.identifier,
+    });
+  }
+
+  return blocks;
+}

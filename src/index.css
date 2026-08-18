@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-200 antialiased;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: theme('colors.zinc.700');
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
