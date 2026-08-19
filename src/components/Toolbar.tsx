@@ -1,12 +1,24 @@
 import { useMemo, useRef } from 'react';
-import { useForge } from '../store';
+import { useActivePreset, useForge } from '../store';
 import { exportPreset } from '../lib/preset';
 import { presetTokenStats } from '../lib/tokens';
 import { lintPreset } from '../lib/lint';
 
 export default function Toolbar() {
-  const { preset, importRaw, reset, setName, setWizardOpen, setSettingsOpen, setParam } =
-    useForge();
+  const preset = useActivePreset();
+  const presets = useForge((s) => s.presets);
+  const activeId = useForge((s) => s.activeId);
+  const {
+    importRaw,
+    newPresetSlot,
+    duplicatePreset,
+    deletePreset,
+    switchPreset,
+    setName,
+    setWizardOpen,
+    setSettingsOpen,
+    setParam,
+  } = useForge();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const stats = useMemo(() => presetTokenStats(preset), [preset]);
@@ -16,11 +28,9 @@ export default function Toolbar() {
   );
 
   const onImport = async (file: File) => {
-    if (!confirm(`Replace the current working preset "${preset.name}" with "${file.name}"? Unexported changes are lost.`)) {
-      return;
-    }
     try {
       const raw = JSON.parse(await file.text());
+      // Imports open a NEW workspace slot; nothing existing is overwritten.
       importRaw(raw, file.name.replace(/\.json$/i, ''));
     } catch (e) {
       alert(`Import failed: ${e}`);
@@ -50,12 +60,42 @@ export default function Toolbar() {
         PresetForge
       </span>
 
+      <select
+        value={activeId}
+        onChange={(e) => switchPreset(e.target.value)}
+        className="max-w-44 rounded bg-zinc-900 px-2 py-1 text-sm"
+        title="Switch preset"
+      >
+        {Object.entries(presets).map(([id, p]) => (
+          <option key={id} value={id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
       <input
         value={preset.name}
         onChange={(e) => setName(e.target.value)}
-        className="w-52 rounded bg-zinc-900 px-2 py-1 text-sm outline-none ring-violet-600 focus:ring-1"
+        className="w-40 rounded bg-zinc-900 px-2 py-1 text-sm outline-none ring-violet-600 focus:ring-1"
         placeholder="Preset name"
+        title="Rename this preset"
       />
+      <div className="flex gap-1 text-xs">
+        <button onClick={newPresetSlot} className="rounded bg-zinc-800 px-2 py-1 hover:bg-zinc-700" title="New preset">
+          +
+        </button>
+        <button onClick={duplicatePreset} className="rounded bg-zinc-800 px-2 py-1 hover:bg-zinc-700" title="Duplicate this preset">
+          ⧉
+        </button>
+        <button
+          onClick={() =>
+            confirm(`Delete preset "${preset.name}"? This cannot be undone.`) && deletePreset()
+          }
+          className="rounded bg-zinc-800 px-2 py-1 text-red-400 hover:bg-red-950"
+          title="Delete this preset"
+        >
+          🗑
+        </button>
+      </div>
 
       <label className="ml-2 flex items-center gap-1 text-xs text-zinc-400" title="temperature">
         temp
@@ -90,6 +130,7 @@ export default function Toolbar() {
         <button
           onClick={() => fileRef.current?.click()}
           className="rounded bg-zinc-800 px-3 py-1 text-sm hover:bg-zinc-700"
+          title="Import a preset into a new slot"
         >
           Import
         </button>
@@ -98,13 +139,6 @@ export default function Toolbar() {
           className="rounded bg-emerald-800 px-3 py-1 text-sm hover:bg-emerald-700"
         >
           Export
-        </button>
-        <button
-          onClick={() => confirm('Start a fresh preset? Unexported changes are lost.') && reset()}
-          className="rounded bg-zinc-800 px-3 py-1 text-sm hover:bg-zinc-700"
-          title="New preset"
-        >
-          New
         </button>
         <button
           onClick={() => setSettingsOpen(true)}

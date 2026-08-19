@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
-import { useForge } from '../store';
+import { useActivePreset, useForge } from '../store';
 import { MARKER_NAMES } from '../lib/stDefaults';
 
 export default function Outline() {
-  const { preset, selectedId, select, toggle, moveTo } = useForge();
+  const preset = useActivePreset();
+  const { selectedId, select, toggle, moveTo } = useForge();
   const [filter, setFilter] = useState('');
   const dragId = useRef<string | null>(null);
 

@@ -87,6 +87,50 @@ Write the module content now.`;
   return (await llmChat(cfg, CONTENT_SYSTEM, user)).trim();
 }
 
+const ADVISOR_SYSTEM = `You are a SillyTavern preset advisor. Given a character card and the preset's module list, recommend which optional modules to enable or disable for THIS character - like a creative director making taste decisions. Consider tone, genre, themes, and mechanics implied by the card. Do not recommend changes to core system modules unless clearly wrong for the character.
+
+Respond with ONLY a JSON array:
+[{"identifier": "genre-romance-x1", "enabled": true, "reason": "card is a slow-burn romance lead"}]
+
+Include ONLY modules whose state you would change or explicitly endorse; omit ones you have no opinion on. Use ONLY identifiers from the provided list.`;
+
+export interface AdvisorRec {
+  identifier: string;
+  enabled: boolean;
+  reason: string;
+}
+
+export async function adviseModules(
+  cfg: ProviderConfig,
+  card: { name: string; description: string; personality: string; scenario: string },
+  modules: { identifier: string; name: string; enabled: boolean; snippet: string }[],
+): Promise<AdvisorRec[]> {
+  const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}…` : s);
+  const user = `CHARACTER CARD
+Name: ${card.name}
+Description: ${clip(card.description, 1500)}
+Personality: ${clip(card.personality, 500)}
+Scenario: ${clip(card.scenario, 500)}
+
+PRESET MODULES (identifier | currently enabled | name | content snippet)
+${modules
+  .map((m) => `${m.identifier} | ${m.enabled ? 'ON' : 'off'} | ${m.name} | ${clip(m.snippet, 120)}`)
+  .join('\n')}
+
+Recommend module states for this character.`;
+  const raw = await llmChat(cfg, ADVISOR_SYSTEM, user);
+  const recs = extractJson<AdvisorRec[]>(raw);
+  if (!Array.isArray(recs)) throw new Error('Advisor did not return a list');
+  const known = new Set(modules.map((m) => m.identifier));
+  return recs
+    .filter((r) => r && known.has(r.identifier))
+    .map((r) => ({
+      identifier: r.identifier,
+      enabled: !!r.enabled,
+      reason: String(r.reason ?? ''),
+    }));
+}
+
 export async function refineContent(
   cfg: ProviderConfig,
   moduleName: string,

@@ -1,8 +1,14 @@
-import { useMemo, useState } from 'react';
-import { useForge } from '../store';
-import { assemblePreview } from '../lib/assemble';
+import { useMemo, useRef, useState } from 'react';
+import { useActivePreset, useForge } from '../store';
+import { assemblePreview, sceneFromCard } from '../lib/assemble';
+import { parseCardFile } from '../lib/cards';
 import { lintPreset } from '../lib/lint';
-import { analyzeVariables } from '../lib/macros';
+import {
+  analyzeVariables,
+  isValidVarName,
+  makeGetvarRedirect,
+  makeVarRenamer,
+} from '../lib/macros';
 
 const ROLE_STYLE: Record<string, string> = {
   system: 'border-violet-800/60',
@@ -18,14 +24,49 @@ const SOURCE_BADGE: Record<string, string> = {
 };
 
 export default function Preview() {
-  const { preset, select } = useForge();
+  const preset = useActivePreset();
+  const { select, setJumpTo, card, setCard, setAdvisorOpen, provider, renamePromptContent } =
+    useForge();
   const [tab, setTab] = useState<'context' | 'lint' | 'vars'>('context');
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameTo, setRenameTo] = useState('');
+  const cardFileRef = useRef<HTMLInputElement>(null);
 
-  const blocks = useMemo(() => assemblePreview(preset), [preset]);
+  const scene = useMemo(() => (card ? sceneFromCard(card) : undefined), [card]);
+  const blocks = useMemo(() => assemblePreview(preset, scene), [preset, scene]);
   const findings = useMemo(() => lintPreset(preset), [preset]);
   const vars = useMemo(() => analyzeVariables(preset), [preset]);
   const errs = findings.filter((f) => f.level === 'error').length;
   const warns = findings.filter((f) => f.level === 'warn').length;
+  const definedNames = vars.filter((v) => v.definedIn.length).map((v) => v.name);
+
+  const jump = (identifier: string, needle: string) => {
+    select(identifier);
+    setJumpTo({ identifier, needle });
+  };
+
+  const commitRename = (oldName: string) => {
+    const next = renameTo.trim();
+    setRenaming(null);
+    if (!next || next === oldName) return;
+    if (!isValidVarName(next)) {
+      alert(`"${next}" is not a valid variable name (no ':', '{', '}')`);
+      return;
+    }
+    if (vars.some((v) => v.name === next)) {
+      alert(`A variable named "${next}" already exists - pick another name.`);
+      return;
+    }
+    renamePromptContent(makeVarRenamer(oldName, next));
+  };
+
+  const onLoadCard = async (file: File) => {
+    try {
+      setCard(await parseCardFile(file));
+    } catch (e) {
+      alert(`Card import failed: ${e}`);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -51,11 +92,59 @@ export default function Preview() {
         ))}
       </div>
 
+      <div className="flex items-center gap-1.5 border-b border-zinc-800 px-2 py-1.5 text-xs">
+        <span className="text-zinc-500">Scene:</span>
+        <span className={card ? 'text-emerald-300' : 'text-zinc-400'}>
+          {card ? card.name : 'Seraphina (sample)'}
+        </span>
+        <button
+          onClick={() => cardFileRef.current?.click()}
+          className="rounded bg-zinc-800 px-2 py-0.5 hover:bg-zinc-700"
+          title="Load a character card (.json or .png) to preview against"
+        >
+          Load card
+        </button>
+        {card && (
+          <button
+            onClick={() => setCard(null)}
+            className="rounded bg-zinc-800 px-1.5 py-0.5 hover:bg-zinc-700"
+            title="Back to the sample scene"
+          >
+            ✕
+          </button>
+        )}
+        <button
+          onClick={() => setAdvisorOpen(true)}
+          disabled={!card || !provider.model}
+          title={
+            !card
+              ? 'Load a character card first'
+              : !provider.model
+                ? 'Configure a provider first (⚙)'
+                : 'AI-recommend module toggles for this character'
+          }
+          className="ml-auto rounded bg-violet-700 px-2 py-0.5 font-medium hover:bg-violet-600 disabled:opacity-40"
+        >
+          🎯 Advisor
+        </button>
+        <input
+          ref={cardFileRef}
+          type="file"
+          accept=".json,.png,application/json,image/png"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onLoadCard(f);
+            e.target.value = '';
+          }}
+        />
+      </div>
+
       {tab === 'context' && (
         <div className="flex-1 overflow-y-auto p-2">
           <div className="mb-2 text-[11px] leading-snug text-zinc-600">
-            Structural preview with a sample scene: where each enabled prompt actually
-            lands. In-Chat prompts appear <i>inside</i> the chat at their depth.
+            Structural preview: where each enabled prompt actually lands. In-Chat prompts
+            appear <i>inside</i> the chat at their depth.
           </div>
           {blocks.map((b, i) => (
             <div
@@ -113,15 +202,102 @@ export default function Preview() {
               No {'{{setvar}}'} / {'{{getvar}}'} usage in this preset.
             </div>
           )}
-          {vars.map((v) => (
-            <div key={v.name} className="mb-2 rounded bg-zinc-900 p-2 text-xs">
-              <div className="mb-1 font-mono text-violet-300">{v.name}</div>
-              <div className={v.definedIn.length ? 'text-zinc-500' : 'text-red-400'}>
-                set in: {v.definedIn.length ? v.definedIn.join(', ') : '— nowhere (dangling!)'}
+          {vars.map((v) => {
+            const dangling = !v.definedIn.length && v.usedIn.length > 0;
+            return (
+              <div key={v.name} className="mb-2 rounded bg-zinc-900 p-2 text-xs">
+                <div className="mb-1 flex items-center gap-2">
+                  {renaming === v.name ? (
+                    <>
+                      <input
+                        autoFocus
+                        value={renameTo}
+                        onChange={(e) => setRenameTo(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitRename(v.name);
+                          if (e.key === 'Escape') setRenaming(null);
+                        }}
+                        className="w-40 rounded bg-zinc-950 px-1.5 py-0.5 font-mono text-violet-300 outline-none ring-1 ring-violet-600"
+                      />
+                      <button onClick={() => commitRename(v.name)} className="rounded bg-violet-700 px-2 py-0.5 hover:bg-violet-600">
+                        OK
+                      </button>
+                      <button onClick={() => setRenaming(null)} className="rounded bg-zinc-800 px-2 py-0.5">
+                        esc
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-mono text-violet-300">{v.name}</span>
+                      <button
+                        onClick={() => {
+                          setRenaming(v.name);
+                          setRenameTo(v.name);
+                        }}
+                        className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-400 hover:bg-zinc-700"
+                        title="Rename this variable across all modules (setvar + getvar)"
+                      >
+                        ✏ rename
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className={v.definedIn.length ? 'text-zinc-500' : 'text-red-400'}>
+                  set in:{' '}
+                  {v.definedIn.length
+                    ? v.definedIn.map((id) => (
+                        <button
+                          key={id}
+                          onClick={() => jump(id, `setvar::${v.name}`)}
+                          className="mr-1 rounded bg-zinc-800 px-1 py-px text-zinc-300 hover:bg-violet-950"
+                          title="Jump to this setvar"
+                        >
+                          {id}
+                        </button>
+                      ))
+                    : '— nowhere (dangling!)'}
+                </div>
+                <div className="mt-0.5 text-zinc-500">
+                  read in:{' '}
+                  {v.usedIn.length
+                    ? v.usedIn.map((id) => (
+                        <button
+                          key={id}
+                          onClick={() => jump(id, `getvar::${v.name}`)}
+                          className="mr-1 rounded bg-zinc-800 px-1 py-px text-zinc-300 hover:bg-violet-950"
+                          title="Jump to this getvar"
+                        >
+                          {id}
+                        </button>
+                      ))
+                    : '—'}
+                </div>
+                {dangling && definedNames.length > 0 && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-amber-300">
+                    quick fix — redirect reads to:
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          renamePromptContent(makeGetvarRedirect(v.name, e.target.value));
+                        }
+                      }}
+                      className="rounded bg-zinc-950 px-1 py-0.5 text-zinc-300"
+                    >
+                      <option value="" disabled>
+                        pick a defined var…
+                      </option>
+                      {definedNames.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
-              <div className="text-zinc-500">read in: {v.usedIn.join(', ') || '—'}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -31,3 +31,25 @@ export function analyzeVariables(wp: WorkingPreset): VariableUsage[] {
   return [...vars.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** A variable name is usable if it can live inside {{setvar::name::v}} / {{getvar::name}}. */
+export function isValidVarName(name: string): boolean {
+  return name.length > 0 && !/[:{}]/.test(name);
+}
+
+const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escSub = (s: string) => s.replace(/\$/g, '$$$$');
+
+/** Content rewriter renaming a variable in both setvar and getvar macros. */
+export function makeVarRenamer(oldName: string, newName: string): (content: string) => string {
+  const setRe = new RegExp(`(\\{\\{setvar::\\s*)${escRe(oldName)}(\\s*::)`, 'g');
+  const getRe = new RegExp(`(\\{\\{getvar::\\s*)${escRe(oldName)}(\\s*\\}\\})`, 'g');
+  const sub = `$1${escSub(newName)}$2`;
+  return (c) => c.replace(setRe, sub).replace(getRe, sub);
+}
+
+/** Content rewriter redirecting only getvar reads (dangling-variable fix). */
+export function makeGetvarRedirect(oldName: string, newName: string): (content: string) => string {
+  const getRe = new RegExp(`(\\{\\{getvar::\\s*)${escRe(oldName)}(\\s*\\}\\})`, 'g');
+  return (c) => c.replace(getRe, `$1${escSub(newName)}$2`);
+}
+

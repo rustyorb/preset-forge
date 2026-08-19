@@ -1,23 +1,35 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import type { CardData } from './lib/cards';
 import type { OrderEntry, PromptEntry, ProviderConfig, WorkingPreset } from './lib/types';
 import { newPreset, normalizePreset, slugify } from './lib/preset';
 import { DEFAULT_IDENTIFIERS } from './lib/stDefaults';
 
 interface ForgeState {
-  preset: WorkingPreset;
+  /** preset library: id -> preset; activeId always exists in the map */
+  presets: Record<string, WorkingPreset>;
+  activeId: string;
   selectedId: string | null;
   provider: ProviderConfig;
+  card: CardData | null;
   wizardOpen: boolean;
   settingsOpen: boolean;
+  advisorOpen: boolean;
+  /** one-shot "open this module and highlight this text" request (Vars tab jump) */
+  jumpTo: { identifier: string; needle: string } | null;
 
   select: (id: string | null) => void;
+  setJumpTo: (j: { identifier: string; needle: string } | null) => void;
   importRaw: (raw: unknown, name: string) => void;
-  reset: () => void;
+  newPresetSlot: () => void;
+  duplicatePreset: () => void;
+  deletePreset: () => void;
+  switchPreset: (id: string) => void;
   setName: (name: string) => void;
   setParam: (key: string, value: unknown) => void;
   updatePrompt: (id: string, patch: Partial<PromptEntry>) => void;
   toggle: (id: string) => void;
+  setEnabled: (flags: Record<string, boolean>) => void;
   moveTo: (id: string, beforeId: string | null) => void;
   addModule: (partial?: Partial<PromptEntry>, afterId?: string) => string;
   removeModule: (id: string) => void;
@@ -26,10 +38,16 @@ interface ForgeState {
     main: string | undefined,
     modules: PromptEntry[],
   ) => void;
+  renamePromptContent: (rewrite: (content: string) => string) => void;
+  setCard: (card: CardData | null) => void;
   setProvider: (p: ProviderConfig) => void;
   setWizardOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+  setAdvisorOpen: (open: boolean) => void;
 }
+
+/** Selector for the active preset - the one components subscribe to. */
+export const useActivePreset = (): WorkingPreset => useForge((s) => s.presets[s.activeId]);
 
 /** Built-in slots are protected by identifier, not by the imported file's flags. */
 const isProtected = (p: PromptEntry | undefined) =>
@@ -45,8 +63,15 @@ function insertIntoOrder(order: OrderEntry[], entries: OrderEntry[], anchorId?: 
   return next;
 }
 
-// Debounce localStorage writes: a 90-module preset serializes to ~100-300KB and
-// zustand persist would otherwise stringify it synchronously on every keystroke.
+function presetShapeFix(p: WorkingPreset): WorkingPreset {
+  p.extraOrders ??= [];
+  p.hadPrompts ??= true;
+  p.importNotes ??= { wasWrapped: false, hadFlatOrder: false };
+  return p;
+}
+
+// Debounce localStorage writes: multiple 100-300KB presets would otherwise be
+// stringified synchronously on every keystroke.
 function debouncedStorage(delayMs: number): Storage {
   let timer: number | undefined;
   let pending: [string, string] | null = null;
@@ -76,180 +101,267 @@ function debouncedStorage(delayMs: number): Storage {
   };
 }
 
+const firstId = slugify('preset');
+
 export const useForge = create<ForgeState>()(
   persist(
-    (set, get) => ({
-      preset: newPreset(),
-      selectedId: 'main',
-      provider: {
-        kind: 'openai',
-        baseUrl: 'http://localhost:1234/v1',
-        apiKey: '',
-        model: '',
-      },
-      wizardOpen: false,
-      settingsOpen: false,
-
-      select: (id) => set({ selectedId: id }),
-
-      importRaw: (raw, name) =>
-        set({ preset: normalizePreset(raw, name), selectedId: null }),
-
-      reset: () => set({ preset: newPreset(), selectedId: 'main' }),
-
-      setName: (name) => set((s) => ({ preset: { ...s.preset, name } })),
-
-      setParam: (key, value) =>
+    (set, get) => {
+      /** Immutable update of the active preset. */
+      const patchActive = (fn: (p: WorkingPreset) => WorkingPreset) =>
         set((s) => ({
-          preset: { ...s.preset, params: { ...s.preset.params, [key]: value } },
-        })),
-
-      updatePrompt: (id, patch) =>
-        set((s) => {
-          // First match only: duplicate identifiers exist in broken imports, and
-          // the Editor displays the first - patching all copies destroys content.
-          const idx = s.preset.prompts.findIndex((p) => p.identifier === id);
-          if (idx === -1) return s;
-          const prompts = [...s.preset.prompts];
-          prompts[idx] = { ...prompts[idx], ...patch };
-          return { preset: { ...s.preset, prompts } };
-        }),
-
-      toggle: (id) =>
-        set((s) => ({
-          preset: {
-            ...s.preset,
-            order: s.preset.order.map((e) =>
-              e.identifier === id ? { ...e, enabled: !e.enabled } : e,
-            ),
-            // Keep the informational prompt-level flag in sync where it exists.
-            prompts: s.preset.prompts.map((p) =>
-              p.identifier === id && p.enabled !== undefined && !p.marker
-                ? { ...p, enabled: !s.preset.order.find((e) => e.identifier === id)?.enabled }
-                : p,
-            ),
-          },
-        })),
-
-      moveTo: (id, beforeId) =>
-        set((s) => {
-          if (id === beforeId) return s;
-          const order = [...s.preset.order];
-          const src = order.findIndex((e) => e.identifier === id);
-          if (src === -1) return s;
-          const dstOrig = beforeId === null ? order.length : order.findIndex((e) => e.identifier === beforeId);
-          if (dstOrig === -1) return s;
-          const [entry] = order.splice(src, 1);
-          // Insert at the target's ORIGINAL index: after removal this lands the
-          // entry after the hovered row when dragging down (so down-by-one works)
-          // and before it when dragging up.
-          order.splice(beforeId === null ? order.length : dstOrig, 0, entry);
-          return { preset: { ...s.preset, order } };
-        }),
-
-      addModule: (partial = {}, afterId) => {
-        const name = partial.name ?? 'New Module';
-        const id = partial.identifier ?? slugify(name);
-        const entry: PromptEntry = {
-          identifier: id,
-          name,
-          system_prompt: false,
-          marker: false,
-          enabled: false,
-          role: 'system',
-          content: '',
-          injection_position: 0,
-          injection_depth: 4,
-          injection_order: 100,
-          forbid_overrides: false,
-          ...partial,
-        };
-        set((s) => ({
-          preset: {
-            ...s.preset,
-            prompts: [...s.preset.prompts, entry],
-            order: insertIntoOrder(
-              s.preset.order,
-              [{ identifier: id, enabled: !!entry.enabled }],
-              afterId ?? s.selectedId ?? undefined,
-            ),
-          },
-          selectedId: id,
+          presets: { ...s.presets, [s.activeId]: fn(s.presets[s.activeId]) },
         }));
-        return id;
-      },
 
-      removeModule: (id) => {
-        const p = get().preset.prompts.find((x) => x.identifier === id);
-        if (isProtected(p)) return;
-        set((s) => ({
-          preset: {
-            ...s.preset,
-            prompts: s.preset.prompts.filter((x) => x.identifier !== id),
-            order: s.preset.order.filter((e) => e.identifier !== id),
-          },
-          selectedId: s.selectedId === id ? null : s.selectedId,
-        }));
-      },
+      return {
+        presets: { [firstId]: newPreset() },
+        activeId: firstId,
+        selectedId: 'main',
+        provider: {
+          kind: 'openai',
+          baseUrl: 'http://localhost:1234/v1',
+          apiKey: '',
+          model: '',
+        },
+        card: null,
+        wizardOpen: false,
+        settingsOpen: false,
+        advisorOpen: false,
+        jumpTo: null,
 
-      applyWizard: (params, main, modules) =>
-        set((s) => {
-          const prompts = [...s.preset.prompts];
-          if (main !== undefined) {
-            const mainIdx = prompts.findIndex((p) => p.identifier === 'main');
-            if (mainIdx !== -1) {
-              prompts[mainIdx] = { ...prompts[mainIdx], content: main };
-            } else {
-              prompts.unshift({
-                identifier: 'main',
-                name: 'Main Prompt',
-                system_prompt: true,
-                role: 'system',
-                content: main,
-                marker: false,
-              });
-            }
-          }
-          prompts.push(...modules);
-          const order = insertIntoOrder(
-            s.preset.order.some((e) => e.identifier === 'main')
-              ? s.preset.order
-              : [{ identifier: 'main', enabled: true }, ...s.preset.order],
-            modules.map((m) => ({ identifier: m.identifier, enabled: !!m.enabled })),
-            'main',
-          );
-          return {
-            preset: {
-              ...s.preset,
-              params: { ...s.preset.params, ...params },
-              prompts,
-              order,
-            },
+        select: (id) => set({ selectedId: id }),
+        setJumpTo: (jumpTo) => set({ jumpTo }),
+
+        importRaw: (raw, name) => {
+          const id = slugify(name || 'imported');
+          set((s) => ({
+            presets: { ...s.presets, [id]: normalizePreset(raw, name) },
+            activeId: id,
             selectedId: null,
-          };
-        }),
+          }));
+        },
 
-      setProvider: (provider) => set({ provider }),
-      setWizardOpen: (wizardOpen) => set({ wizardOpen }),
-      setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
-    }),
+        newPresetSlot: () => {
+          const id = slugify('preset');
+          set((s) => ({
+            presets: { ...s.presets, [id]: newPreset() },
+            activeId: id,
+            selectedId: 'main',
+          }));
+        },
+
+        duplicatePreset: () => {
+          const s = get();
+          const src = s.presets[s.activeId];
+          const id = slugify(src.name);
+          const copy = structuredClone(src);
+          copy.name = `${src.name} copy`;
+          set({
+            presets: { ...s.presets, [id]: copy },
+            activeId: id,
+          });
+        },
+
+        deletePreset: () => {
+          set((s) => {
+            const presets = { ...s.presets };
+            delete presets[s.activeId];
+            let activeId = Object.keys(presets)[0];
+            if (!activeId) {
+              activeId = slugify('preset');
+              presets[activeId] = newPreset();
+            }
+            return { presets, activeId, selectedId: null };
+          });
+        },
+
+        switchPreset: (id) =>
+          set((s) => (s.presets[id] ? { activeId: id, selectedId: null } : s)),
+
+        setName: (name) => patchActive((p) => ({ ...p, name })),
+
+        setParam: (key, value) =>
+          patchActive((p) => ({ ...p, params: { ...p.params, [key]: value } })),
+
+        updatePrompt: (id, patch) =>
+          patchActive((p) => {
+            // First match only: duplicate identifiers exist in broken imports, and
+            // the Editor displays the first - patching all copies destroys content.
+            const idx = p.prompts.findIndex((x) => x.identifier === id);
+            if (idx === -1) return p;
+            const prompts = [...p.prompts];
+            prompts[idx] = { ...prompts[idx], ...patch };
+            return { ...p, prompts };
+          }),
+
+        toggle: (id) =>
+          patchActive((p) => ({
+            ...p,
+            order: p.order.map((e) => (e.identifier === id ? { ...e, enabled: !e.enabled } : e)),
+            // Keep the informational prompt-level flag in sync where it exists.
+            prompts: p.prompts.map((x) =>
+              x.identifier === id && x.enabled !== undefined && !x.marker
+                ? { ...x, enabled: !p.order.find((e) => e.identifier === id)?.enabled }
+                : x,
+            ),
+          })),
+
+        setEnabled: (flags) =>
+          patchActive((p) => ({
+            ...p,
+            order: p.order.map((e) =>
+              flags[e.identifier] === undefined ? e : { ...e, enabled: flags[e.identifier] },
+            ),
+            prompts: p.prompts.map((x) =>
+              flags[x.identifier] === undefined || x.enabled === undefined || x.marker
+                ? x
+                : { ...x, enabled: flags[x.identifier] },
+            ),
+          })),
+
+        moveTo: (id, beforeId) =>
+          patchActive((p) => {
+            if (id === beforeId) return p;
+            const order = [...p.order];
+            const src = order.findIndex((e) => e.identifier === id);
+            if (src === -1) return p;
+            const dstOrig =
+              beforeId === null ? order.length : order.findIndex((e) => e.identifier === beforeId);
+            if (dstOrig === -1) return p;
+            const [entry] = order.splice(src, 1);
+            // Insert at the target's ORIGINAL index: after removal this lands the
+            // entry after the hovered row when dragging down (so down-by-one works)
+            // and before it when dragging up.
+            order.splice(beforeId === null ? order.length : dstOrig, 0, entry);
+            return { ...p, order };
+          }),
+
+        addModule: (partial = {}, afterId) => {
+          const name = partial.name ?? 'New Module';
+          const id = partial.identifier ?? slugify(name);
+          const entry: PromptEntry = {
+            identifier: id,
+            name,
+            system_prompt: false,
+            marker: false,
+            enabled: false,
+            role: 'system',
+            content: '',
+            injection_position: 0,
+            injection_depth: 4,
+            injection_order: 100,
+            forbid_overrides: false,
+            ...partial,
+          };
+          const anchor = afterId ?? get().selectedId ?? undefined;
+          patchActive((p) => ({
+            ...p,
+            prompts: [...p.prompts, entry],
+            order: insertIntoOrder(p.order, [{ identifier: id, enabled: !!entry.enabled }], anchor),
+          }));
+          set({ selectedId: id });
+          return id;
+        },
+
+        removeModule: (id) => {
+          const s = get();
+          const p = s.presets[s.activeId].prompts.find((x) => x.identifier === id);
+          if (isProtected(p)) return;
+          patchActive((wp) => ({
+            ...wp,
+            prompts: wp.prompts.filter((x) => x.identifier !== id),
+            order: wp.order.filter((e) => e.identifier !== id),
+          }));
+          if (get().selectedId === id) set({ selectedId: null });
+        },
+
+        applyWizard: (params, main, modules) => {
+          patchActive((wp) => {
+            const prompts = [...wp.prompts];
+            if (main !== undefined) {
+              const mainIdx = prompts.findIndex((p) => p.identifier === 'main');
+              if (mainIdx !== -1) {
+                prompts[mainIdx] = { ...prompts[mainIdx], content: main };
+              } else {
+                prompts.unshift({
+                  identifier: 'main',
+                  name: 'Main Prompt',
+                  system_prompt: true,
+                  role: 'system',
+                  content: main,
+                  marker: false,
+                });
+              }
+            }
+            prompts.push(...modules);
+            const order = insertIntoOrder(
+              wp.order.some((e) => e.identifier === 'main')
+                ? wp.order
+                : [{ identifier: 'main', enabled: true }, ...wp.order],
+              modules.map((m) => ({ identifier: m.identifier, enabled: !!m.enabled })),
+              'main',
+            );
+            return { ...wp, params: { ...wp.params, ...params }, prompts, order };
+          });
+          set({ selectedId: null });
+        },
+
+        renamePromptContent: (rewrite) =>
+          patchActive((p) => ({
+            ...p,
+            prompts: p.prompts.map((x) =>
+              typeof x.content === 'string' && x.content.includes('{{')
+                ? { ...x, content: rewrite(x.content) }
+                : x,
+            ),
+          })),
+
+        setCard: (card) => set({ card }),
+        setProvider: (provider) => set({ provider }),
+        setWizardOpen: (wizardOpen) => set({ wizardOpen }),
+        setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+        setAdvisorOpen: (advisorOpen) => set({ advisorOpen }),
+      };
+    },
     {
       name: 'preset-forge',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => debouncedStorage(400)),
-      partialize: (s) => ({ preset: s.preset, provider: s.provider }),
+      partialize: (s) => ({
+        presets: s.presets,
+        activeId: s.activeId,
+        provider: s.provider,
+        card: s.card,
+      }),
       migrate: (persisted) => persisted,
       // Shape-normalize on EVERY rehydrate (not just version bumps): HMR or an
-      // old tab can persist a preset missing newer fields under the current version.
+      // old tab can persist data missing newer fields under the current version.
       merge: (persisted, current) => {
-        const p = persisted as { preset?: WorkingPreset; provider?: ProviderConfig } | undefined;
-        const preset = p?.preset;
-        if (preset) {
-          preset.extraOrders ??= [];
-          preset.hadPrompts ??= true;
-          preset.importNotes ??= { wasWrapped: false, hadFlatOrder: false };
+        const p = persisted as
+          | {
+              preset?: WorkingPreset; // v1 single-slot shape
+              presets?: Record<string, WorkingPreset>;
+              activeId?: string;
+              provider?: ProviderConfig;
+              card?: CardData | null;
+            }
+          | undefined;
+        if (!p) return current;
+        let presets = p.presets;
+        let activeId = p.activeId;
+        if (!presets || !Object.keys(presets).length) {
+          const id = slugify(p.preset?.name ?? 'preset');
+          presets = { [id]: p.preset ?? newPreset() };
+          activeId = id;
         }
-        return { ...current, ...(p ?? {}) };
+        for (const wp of Object.values(presets)) presetShapeFix(wp);
+        if (!activeId || !presets[activeId]) activeId = Object.keys(presets)[0];
+        return {
+          ...current,
+          presets,
+          activeId,
+          provider: p.provider ?? current.provider,
+          card: p.card ?? null,
+        };
       },
     },
   ),

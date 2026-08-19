@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useForge } from '../store';
+import { useActivePreset, useForge } from '../store';
 import { generateModuleContent, generatePlan, type WizardPlan } from '../lib/gen';
 import { slugify } from '../lib/preset';
 import type { PromptEntry } from '../lib/types';
@@ -7,7 +7,8 @@ import type { PromptEntry } from '../lib/types';
 type Phase = 'describe' | 'planning' | 'plan' | 'generating' | 'error';
 
 export default function WizardModal() {
-  const { wizardOpen, setWizardOpen, provider, preset, applyWizard } = useForge();
+  const { wizardOpen, setWizardOpen, provider, applyWizard } = useForge();
+  const preset = useActivePreset();
   const [phase, setPhase] = useState<Phase>('describe');
   const [description, setDescription] = useState('');
   const [plan, setPlan] = useState<WizardPlan | null>(null);

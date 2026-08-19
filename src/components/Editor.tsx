@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useForge } from '../store';
+import { useEffect, useRef, useState } from 'react';
+import { useActivePreset, useForge } from '../store';
 import { estimateTokens } from '../lib/tokens';
 import { refineContent } from '../lib/gen';
 import { DEFAULT_IDENTIFIERS } from '../lib/stDefaults';
@@ -15,13 +15,32 @@ function numericHandler(commit: (n: number) => void) {
 }
 
 export default function Editor() {
-  const { preset, selectedId, updatePrompt, removeModule, provider } = useForge();
+  const preset = useActivePreset();
+  const { selectedId, updatePrompt, removeModule, provider, jumpTo, setJumpTo } = useForge();
   const [refineText, setRefineText] = useState('');
   const [proposed, setProposed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const p = preset.prompts.find((x) => x.identifier === selectedId);
+
+  // Vars-tab jump: focus the content box and select the referenced macro text.
+  useEffect(() => {
+    if (!jumpTo || jumpTo.identifier !== selectedId || !p) return;
+    const el = contentRef.current;
+    const content = p.content ?? '';
+    const at = content.indexOf(jumpTo.needle);
+    setJumpTo(null);
+    if (!el || at === -1) return;
+    el.focus();
+    el.setSelectionRange(at, at + jumpTo.needle.length);
+    // Rough scroll: put the selection's line near the middle of the box.
+    const line = content.slice(0, at).split('\n').length;
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 20;
+    el.scrollTop = Math.max(0, line * lineHeight - el.clientHeight / 2);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTo, selectedId]);
   if (!p) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-zinc-600">
@@ -141,6 +160,7 @@ export default function Editor() {
       </div>
 
       <textarea
+        ref={contentRef}
         value={p.content ?? ''}
         onChange={(e) => updatePrompt(p.identifier, { content: e.target.value })}
         spellCheck={false}

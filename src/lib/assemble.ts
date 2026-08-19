@@ -1,3 +1,4 @@
+import type { CardData } from './cards';
 import type { PromptEntry, Role, WorkingPreset } from './types';
 import { MARKER_NAMES } from './stDefaults';
 
@@ -11,7 +12,17 @@ export interface AssembledBlock {
   depth?: number;
 }
 
-const SAMPLE = {
+export interface SceneData {
+  char: string;
+  user: string;
+  description: string;
+  personality: string;
+  scenario: string;
+  persona: string;
+  chat: { role: Role; text: string }[];
+}
+
+export const DEFAULT_SCENE: SceneData = {
   char: 'Seraphina',
   user: 'You',
   description: 'Seraphina is a guardian spirit of the Whispering Woods, gentle but fiercely protective.',
@@ -19,37 +30,59 @@ const SAMPLE = {
   scenario: 'A wounded traveler has stumbled into the grove at dusk.',
   persona: 'A wandering cartographer mapping the old forest roads.',
   chat: [
-    { role: 'user' as Role, text: '*I limp into the clearing, clutching my arm.* Hello? Is anyone there?' },
-    { role: 'assistant' as Role, text: '*Light gathers between the trees as Seraphina steps forward.* "Easy, traveler. You are safe here."' },
-    { role: 'user' as Role, text: 'Thank you... I think I\'m lost. And this cut won\'t stop bleeding.' },
-    { role: 'assistant' as Role, text: '*She kneels beside you, palms glowing softly.* "Let me see. The woods told me you were coming."' },
-    { role: 'user' as Role, text: 'The woods... talk to you?' },
+    { role: 'user', text: '*I limp into the clearing, clutching my arm.* Hello? Is anyone there?' },
+    { role: 'assistant', text: '*Light gathers between the trees as Seraphina steps forward.* "Easy, traveler. You are safe here."' },
+    { role: 'user', text: 'Thank you... I think I\'m lost. And this cut won\'t stop bleeding.' },
+    { role: 'assistant', text: '*She kneels beside you, palms glowing softly.* "Let me see. The woods told me you were coming."' },
+    { role: 'user', text: 'The woods... talk to you?' },
   ],
 };
 
-const MACRO_VALUES: Record<string, string> = {
-  char: SAMPLE.char,
-  user: SAMPLE.user,
-  charIfNotGroup: SAMPLE.char,
-  description: SAMPLE.description,
-  personality: SAMPLE.personality,
-  scenario: SAMPLE.scenario,
-  persona: SAMPLE.persona,
-};
-
-function fillMacros(text: string): string {
-  return text.replace(
-    /\{\{(char|user|charIfNotGroup|description|personality|scenario|persona)\}\}/g,
-    (_, k: string) => MACRO_VALUES[k],
+/** Build a preview scene from a real imported character card. */
+export function sceneFromCard(card: CardData): SceneData {
+  const chat: SceneData['chat'] = [];
+  if (card.first_mes) chat.push({ role: 'assistant', text: card.first_mes });
+  chat.push(
+    { role: 'user', text: '*I take in the scene, then respond.* Tell me more.' },
+    { role: 'assistant', text: `*${card.name} considers the question before answering.*` },
+    { role: 'user', text: 'And what happens next?' },
   );
+  return {
+    char: card.name,
+    user: 'You',
+    description: card.description,
+    personality: card.personality,
+    scenario: card.scenario,
+    persona: 'A curious visitor.',
+    chat,
+  };
 }
 
-function markerContent(id: string): string | null {
+function macroFiller(scene: SceneData): (text: string) => string {
+  const values: Record<string, string> = {
+    char: scene.char,
+    user: scene.user,
+    charIfNotGroup: scene.char,
+    description: scene.description,
+    personality: scene.personality,
+    scenario: scene.scenario,
+    persona: scene.persona,
+  };
+  return (text) =>
+    text.replace(
+      /\{\{(char|user|charIfNotGroup|description|personality|scenario|persona)\}\}/g,
+      (_, k: string) => values[k],
+    );
+}
+
+function markerContent(id: string, scene: SceneData): string | null {
   switch (id) {
-    case 'charDescription': return SAMPLE.description;
-    case 'charPersonality': return `[${SAMPLE.char}'s personality: ${SAMPLE.personality}]`;
-    case 'scenario': return `[Circumstances and context of the dialogue: ${SAMPLE.scenario}]`;
-    case 'personaDescription': return `[${SAMPLE.user}'s persona: ${SAMPLE.persona}]`;
+    case 'charDescription': return scene.description || null;
+    case 'charPersonality':
+      return scene.personality ? `[${scene.char}'s personality: ${scene.personality}]` : null;
+    case 'scenario':
+      return scene.scenario ? `[Circumstances and context of the dialogue: ${scene.scenario}]` : null;
+    case 'personaDescription': return `[${scene.user}'s persona: ${scene.persona}]`;
     case 'worldInfoBefore':
     case 'worldInfoAfter':
     case 'dialogueExamples':
@@ -60,23 +93,24 @@ function markerContent(id: string): string | null {
 
 /**
  * Structural simulation of ST's prompt assembly:
- * relative prompts in order (markers expanded with sample data), chat history
+ * relative prompts in order (markers expanded with scene data), chat history
  * with In-Chat prompts spliced at injection_depth from the end (depth 0 = last).
  * Same-depth ordering matches openai.js populationInjectionPrompts, not the
  * (simplified) docs. Labeled a preview, not a byte-accurate clone.
  */
-export function assemblePreview(wp: WorkingPreset): AssembledBlock[] {
+export function assemblePreview(wp: WorkingPreset, scene: SceneData = DEFAULT_SCENE): AssembledBlock[] {
   const byId = new Map(wp.prompts.map((p) => [p.identifier, p]));
   const enabledOrder = wp.order.filter((e) => e.enabled);
   const enabledIds = new Set(enabledOrder.map((e) => e.identifier));
   const blocks: AssembledBlock[] = [];
+  const fillMacros = macroFiller(scene);
 
   const absolutePrompts = wp.prompts.filter(
     (p) => p.injection_position === 1 && !p.marker && p.content && enabledIds.has(p.identifier),
   );
 
   const pushChatWithInjections = () => {
-    const chatLen = SAMPLE.chat.length;
+    const chatLen = scene.chat.length;
     // depth d inserts before the last d messages; collect per gap index 0..chatLen
     const byGap = new Map<number, PromptEntry[]>();
     for (const p of absolutePrompts) {
@@ -109,8 +143,13 @@ export function assemblePreview(wp: WorkingPreset): AssembledBlock[] {
     };
     for (let i = 0; i < chatLen; i++) {
       emitGap(i);
-      const msg = SAMPLE.chat[i];
-      blocks.push({ role: msg.role, content: msg.text, source: 'chat', label: `chat message ${i + 1}` });
+      const msg = scene.chat[i];
+      blocks.push({
+        role: msg.role,
+        content: fillMacros(msg.text),
+        source: 'chat',
+        label: `chat message ${i + 1}`,
+      });
     }
     emitGap(chatLen); // depth 0: after the last message
   };
@@ -125,7 +164,7 @@ export function assemblePreview(wp: WorkingPreset): AssembledBlock[] {
     }
     if (!p) continue;
     if (p.marker) {
-      const mc = markerContent(p.identifier);
+      const mc = markerContent(p.identifier, scene);
       if (mc !== null) {
         blocks.push({
           role: 'system',

@@ -3,6 +3,7 @@ import Toolbar from './components/Toolbar';
 import Outline from './components/Outline';
 import Editor from './components/Editor';
 import Preview from './components/Preview';
+import AdvisorModal from './components/AdvisorModal';
 import SettingsModal from './components/SettingsModal';
 import WizardModal from './components/WizardModal';
 
@@ -39,6 +40,7 @@ export default function App() {
       </div>
       <SettingsModal />
       <WizardModal />
+      <AdvisorModal />
     </div>
   );
 }
