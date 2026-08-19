@@ -91,7 +91,7 @@ baked into the plan prompt. Context Preview also landed early (same-depth
 ordering verified against `populationInjectionPrompts`, not the docs).
 *Still owed: live generation test against a real provider.*
 
-**P2 — Daily-driver trio** *(reprioritized 2026-08-19 — Kyle's picks)*
+**P2 — Daily-driver trio** ✓ *shipped 2026-08-19 (advisor live-run pending a configured provider)*
 1. **Multi-preset workspace**: preset library in localStorage (`id → WorkingPreset`),
    toolbar switcher, new/duplicate/delete, per-preset autosave; migrate the
    current single-slot storage on first load.
