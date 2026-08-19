@@ -79,28 +79,41 @@ configurable provider. Three panes:
 
 ## Phases (each gated on a verify step)
 
-**P0 — Foundation (no LLM yet)**
+**P0 — Foundation (no LLM yet)** ✓ *shipped 2026-08-18*
 Schema types, import, outline+editor panes, drag-order → `prompt_order`, live
 lint, token estimate, export.
-*Verify: import Chimera_v2 → export → semantic round-trip (same prompts, order,
-toggles); exported file passes `validate_preset.py`; import into a scratch ST
-and confirm the manager renders it identically.*
+*Verified: Chimera_v2 (90 modules) semantic round-trip lossless incl.
+per-character order entries; exported file passes `validate_preset.py`.*
 
-**P1 — Generative wizard**
-Spec wizard, per-module generation + refine chat, sampler advisor.
-*Verify: generate three archetypes (Tier-1 settings-only, Tier-2 10-module
-genre system, Tier-3 30-module w/ stances+dividers); all pass lint; import and
-spot-check in ST.*
+**P1 — Generative wizard** ✓ *shipped 2026-08-18*
+Spec wizard (plan → approve → atomic apply), per-module refine, sampler advice
+baked into the plan prompt. Context Preview also landed early (same-depth
+ordering verified against `populationInjectionPrompts`, not the docs).
+*Still owed: live generation test against a real provider.*
 
-**P2 — Context Preview + power tools**
-Assembly simulation with sample card/chat, module diff view, exclusion groups,
-reusable module library (save/insert your own genre/stance/CoT blocks).
-*Verify: preview output matches ST's actual prompt itemization (compare against
-ST's prompt inspector for the same preset + dummy chat).*
+**P2 — Daily-driver trio** *(reprioritized 2026-08-19 — Kyle's picks)*
+1. **Multi-preset workspace**: preset library in localStorage (`id → WorkingPreset`),
+   toolbar switcher, new/duplicate/delete, per-preset autosave; migrate the
+   current single-slot storage on first load.
+2. **Variable manager**: promote the Vars tab — rename a variable across all
+   modules (rewrites both `{{setvar}}` and `{{getvar}}`, collision-checked),
+   click a usage to jump to that module with the macro highlighted, one-click
+   fix for dangling getvars.
+3. **Card awareness + Prompt Advisor**: import a real ST character card (V2/V3
+   JSON, or PNG with the base64 `chara` tEXt chunk) → Context Preview renders
+   against the real card instead of the hardcoded sample; **Advisor** button
+   sends card + module names/briefs to the LLM → per-module enable/disable
+   recommendations with reasons and apply-all (NemoGuides' Prompt Advisor,
+   but at authoring time instead of chat time).
+*Verify: two presets edited in parallel without cross-talk after reload;
+variable rename across Chimera_v2 leaves lint clean and zero stale references;
+advisor round-trip on a real card produces only valid module identifiers.*
 
-**P3 — Distribution polish**
-README/MODULE_GUIDE generators, preset snapshots/versioning, NemoPresetExt
-convention interop (dividers, `@tooltip` directives), shareable module packs.
+**P3 — Power tools + distribution**
+Module diff view, exclusion groups, reusable module library, README/
+MODULE_GUIDE generators, preset snapshots/versioning, NemoPresetExt convention
+interop (dividers, `@tooltip` directives), shareable module packs.
+*Preview fidelity check vs ST's prompt inspector lives here too.*
 
 **P4 — Regex kit lane** *(added 2026-08-18: every big preset engine ships regexes)*
 The big engines (NemoEngine, Marinara, Chimera) pair presets with regex scripts —
@@ -111,6 +124,13 @@ as standalone JSON. PresetForge lane: a regex script editor tab (find/replace,
 placement flags, live test box like ST's own), attach-to-preset via
 `extensions.regex_scripts`, kit export (preset + standalone script files), and
 generative authoring ("write a regex that strips em-dashes from AI output").
+
+## Parking lot (heard, deliberately deferred)
+
+Undo/redo, perf wave 2 (store selectors, memoized outline rows),
+duplicate-identifier auto-repair, Text Completion preset family, logit bias
+editing, import-from-URL, wizard streaming/parallel generation, provider
+model-list fetch, three-way version merge, mobile layout.
 
 ## Stack
 
