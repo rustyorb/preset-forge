@@ -117,6 +117,7 @@ export const useForge = create<ForgeState>()(
         activeId: firstId,
         selectedId: 'main',
         provider: {
+          service: 'lmstudio',
           kind: 'openai',
           baseUrl: 'http://localhost:1234/v1',
           apiKey: '',
@@ -355,11 +356,25 @@ export const useForge = create<ForgeState>()(
         }
         for (const wp of Object.values(presets)) presetShapeFix(wp);
         if (!activeId || !presets[activeId]) activeId = Object.keys(presets)[0];
+        const provider = p.provider ?? current.provider;
+        if (!provider.service) {
+          // Older stored configs predate service presets - infer from the URL.
+          const u = provider.baseUrl ?? '';
+          provider.service = u.includes('openrouter')
+            ? 'openrouter'
+            : u.includes('api.openai.com')
+              ? 'openai'
+              : provider.kind === 'anthropic'
+                ? 'anthropic'
+                : /localhost|127\.0\.0\.1/.test(u)
+                  ? 'lmstudio'
+                  : 'custom';
+        }
         return {
           ...current,
           presets,
           activeId,
-          provider: p.provider ?? current.provider,
+          provider,
           card: p.card ?? null,
         };
       },

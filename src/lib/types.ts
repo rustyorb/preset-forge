@@ -43,12 +43,28 @@ export interface LintFinding {
   identifier?: string;
 }
 
+export type ProviderService = 'lmstudio' | 'openrouter' | 'openai' | 'anthropic' | 'custom';
+
 export interface ProviderConfig {
+  /** which prebuilt service this is; drives defaults + UI */
+  service: ProviderService;
+  /** wire protocol: OpenAI-compatible vs Anthropic */
   kind: 'openai' | 'anthropic';
   baseUrl: string;
   apiKey: string;
   model: string;
 }
+
+export const PROVIDER_SERVICES: Record<
+  ProviderService,
+  { label: string; kind: 'openai' | 'anthropic'; baseUrl: string; needsKey: boolean }
+> = {
+  lmstudio: { label: 'LM Studio (local)', kind: 'openai', baseUrl: 'http://localhost:1234/v1', needsKey: false },
+  openrouter: { label: 'OpenRouter', kind: 'openai', baseUrl: 'https://openrouter.ai/api/v1', needsKey: true },
+  openai: { label: 'OpenAI', kind: 'openai', baseUrl: 'https://api.openai.com/v1', needsKey: true },
+  anthropic: { label: 'Anthropic', kind: 'anthropic', baseUrl: 'https://api.anthropic.com', needsKey: true },
+  custom: { label: 'Custom (OpenAI-compatible)', kind: 'openai', baseUrl: '', needsKey: false },
+};
 
 export interface PlannedModule {
   name: string;

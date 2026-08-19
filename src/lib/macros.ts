@@ -19,13 +19,16 @@ export function analyzeVariables(wp: WorkingPreset): VariableUsage[] {
     }
     return v;
   };
+  const addOnce = (list: string[], id: string) => {
+    if (!list.includes(id)) list.push(id);
+  };
   for (const p of wp.prompts) {
     const content = p.content ?? '';
     for (const m of content.matchAll(/\{\{setvar::([^:}]+)::/g)) {
-      get(m[1].trim()).definedIn.push(p.identifier);
+      addOnce(get(m[1].trim()).definedIn, p.identifier);
     }
     for (const m of content.matchAll(/\{\{getvar::([^}]+)\}\}/g)) {
-      get(m[1].trim()).usedIn.push(p.identifier);
+      addOnce(get(m[1].trim()).usedIn, p.identifier);
     }
   }
   return [...vars.values()].sort((a, b) => a.name.localeCompare(b.name));

@@ -56,6 +56,37 @@ export async function llmChat(cfg: ProviderConfig, system: string, user: string)
   return text;
 }
 
+/**
+ * Fetch the provider's model list (LM Studio, OpenRouter, Anthropic, any
+ * OpenAI-compatible server). Doubles as the connection test: models arriving
+ * proves the base URL + key are right.
+ */
+export async function listModels(cfg: ProviderConfig): Promise<string[]> {
+  let url: string;
+  let headers: Record<string, string>;
+  if (cfg.kind === 'anthropic') {
+    const base = cfg.baseUrl.replace(/\/$/, '').replace(/\/v1$/, '');
+    url = `${base}/v1/models?limit=100`;
+    headers = {
+      'x-api-key': cfg.apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    };
+  } else {
+    url = `${cfg.baseUrl.replace(/\/$/, '')}/models`;
+    headers = cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {};
+  }
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const list = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
+  const ids = list
+    .map((m: { id?: string; name?: string }) => m.id ?? m.name ?? '')
+    .filter((s: string) => s.length > 0);
+  if (!ids.length) throw new Error('Server responded but listed no models');
+  return ids.sort();
+}
+
 /** Extract the first parseable JSON object/array from possibly-chatty LLM output. */
 export function extractJson<T>(text: string): T {
   const candidates: string[] = [];
