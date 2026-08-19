@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useForge } from '../store';
 import { exportPreset } from '../lib/preset';
 import { presetTokenStats } from '../lib/tokens';
@@ -9,10 +9,16 @@ export default function Toolbar() {
     useForge();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const stats = presetTokenStats(preset);
-  const errs = lintPreset(preset).filter((f) => f.level === 'error').length;
+  const stats = useMemo(() => presetTokenStats(preset), [preset]);
+  const errs = useMemo(
+    () => lintPreset(preset).filter((f) => f.level === 'error').length,
+    [preset],
+  );
 
   const onImport = async (file: File) => {
+    if (!confirm(`Replace the current working preset "${preset.name}" with "${file.name}"? Unexported changes are lost.`)) {
+      return;
+    }
     try {
       const raw = JSON.parse(await file.text());
       importRaw(raw, file.name.replace(/\.json$/i, ''));
@@ -26,11 +32,14 @@ export default function Toolbar() {
     const blob = new Blob([JSON.stringify(exportPreset(preset), null, 4)], {
       type: 'application/json',
     });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${preset.name || 'preset'}.json`;
+    a.href = url;
+    a.download = `${(preset.name || 'preset').replace(/[\\/:*?"<>|]/g, '_')}.json`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const temp = Number(preset.params.temperature ?? 1);
@@ -56,7 +65,11 @@ export default function Toolbar() {
           min={0}
           max={2}
           value={temp}
-          onChange={(e) => setParam('temperature', Number(e.target.value))}
+          onChange={(e) => {
+            if (e.target.value === '') return;
+            const n = Number(e.target.value);
+            if (Number.isFinite(n)) setParam('temperature', n);
+          }}
           className="w-16 rounded bg-zinc-900 px-1.5 py-1"
         />
       </label>

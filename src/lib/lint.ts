@@ -11,6 +11,23 @@ export function lintPreset(wp: WorkingPreset): LintFinding[] {
   const enabledIds = new Set(wp.order.filter((e) => e.enabled).map((e) => e.identifier));
   const orderedIds = new Set(wp.order.map((e) => e.identifier));
 
+  if (wp.importNotes?.wasWrapped) {
+    out.push({
+      level: 'error',
+      message:
+        'source file was wrapped in {"version","type","data"} - not a real ST preset format; ' +
+        'salvaged on import, but fix the source file (it imports as a dead preset in ST)',
+    });
+  }
+  if (wp.importNotes?.hadFlatOrder) {
+    out.push({
+      level: 'error',
+      message:
+        'source prompt_order was a flat list (broken guide format that ST silently ignores) - ' +
+        'salvaged on import; exporting from here writes the correct nested format',
+    });
+  }
+
   for (const [oldKey, newKey] of Object.entries(DEPRECATED_KEYS)) {
     if (oldKey in wp.params) {
       out.push({
@@ -82,10 +99,33 @@ export function lintPreset(wp: WorkingPreset): LintFinding[] {
     }
   }
 
+  const orderSeen = new Set<string>();
   for (const e of wp.order) {
-    if (!byId.has(e.identifier) && !DEFAULT_IDENTIFIERS.has(e.identifier)) {
-      out.push({ level: 'warn', identifier: e.identifier, message: `order references missing prompt "${e.identifier}" (ST skips it)` });
+    if (orderSeen.has(e.identifier)) {
+      out.push({ level: 'error', identifier: e.identifier, message: `duplicate order entry "${e.identifier}"` });
     }
+    orderSeen.add(e.identifier);
+    if (!byId.has(e.identifier)) {
+      // A default identifier missing from a non-empty prompts array is a real
+      // dangling reference (ST does not re-create it), not default noise.
+      const level = wp.prompts.length > 0 ? 'warn' : 'info';
+      out.push({
+        level,
+        identifier: e.identifier,
+        message: `order references missing prompt "${e.identifier}" (ST skips it)`,
+      });
+    }
+  }
+
+  const chatHistoryOn = wp.order.some((e) => e.identifier === 'chatHistory' && e.enabled);
+  const inChatEnabled = wp.prompts.filter(
+    (p) => p.injection_position === 1 && enabledIds.has(p.identifier),
+  );
+  if (inChatEnabled.length && !chatHistoryOn) {
+    out.push({
+      level: 'warn',
+      message: `${inChatEnabled.length} enabled In-Chat prompt(s) but Chat History is disabled/missing - injections ride the chat and will not be sent`,
+    });
   }
 
   return out;

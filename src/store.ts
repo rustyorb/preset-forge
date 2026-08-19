@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import type { PromptEntry, ProviderConfig, WorkingPreset } from './lib/types';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import type { OrderEntry, PromptEntry, ProviderConfig, WorkingPreset } from './lib/types';
 import { newPreset, normalizePreset, slugify } from './lib/preset';
+import { DEFAULT_IDENTIFIERS } from './lib/stDefaults';
 
 interface ForgeState {
   preset: WorkingPreset;
@@ -17,13 +18,62 @@ interface ForgeState {
   setParam: (key: string, value: unknown) => void;
   updatePrompt: (id: string, patch: Partial<PromptEntry>) => void;
   toggle: (id: string) => void;
-  move: (id: string, delta: number) => void;
   moveTo: (id: string, beforeId: string | null) => void;
-  addModule: (partial?: Partial<PromptEntry>) => string;
+  addModule: (partial?: Partial<PromptEntry>, afterId?: string) => string;
   removeModule: (id: string) => void;
+  applyWizard: (
+    params: Record<string, number>,
+    main: string | undefined,
+    modules: PromptEntry[],
+  ) => void;
   setProvider: (p: ProviderConfig) => void;
   setWizardOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
+}
+
+/** Built-in slots are protected by identifier, not by the imported file's flags. */
+const isProtected = (p: PromptEntry | undefined) =>
+  !!p && (DEFAULT_IDENTIFIERS.has(p.identifier) || !!p.marker);
+
+/** Insert new order entries after anchorId (after 'main' if present, else at the end). */
+function insertIntoOrder(order: OrderEntry[], entries: OrderEntry[], anchorId?: string): OrderEntry[] {
+  const next = [...order];
+  const anchorIdx = anchorId ? next.findIndex((e) => e.identifier === anchorId) : -1;
+  const mainIdx = next.findIndex((e) => e.identifier === 'main');
+  const at = anchorIdx !== -1 ? anchorIdx + 1 : mainIdx !== -1 ? mainIdx + 1 : next.length;
+  next.splice(at, 0, ...entries);
+  return next;
+}
+
+// Debounce localStorage writes: a 90-module preset serializes to ~100-300KB and
+// zustand persist would otherwise stringify it synchronously on every keystroke.
+function debouncedStorage(delayMs: number): Storage {
+  let timer: number | undefined;
+  let pending: [string, string] | null = null;
+  const flush = () => {
+    if (!pending) return;
+    try {
+      localStorage.setItem(pending[0], pending[1]);
+    } catch (e) {
+      console.warn('PresetForge: autosave failed (localStorage quota?)', e);
+    }
+    pending = null;
+  };
+  window.addEventListener('beforeunload', flush);
+  return {
+    getItem: (k) => localStorage.getItem(k),
+    removeItem: (k) => localStorage.removeItem(k),
+    setItem: (k, v) => {
+      pending = [k, v];
+      clearTimeout(timer);
+      timer = window.setTimeout(flush, delayMs);
+    },
+    clear: () => localStorage.clear(),
+    key: (i) => localStorage.key(i),
+    get length() {
+      return localStorage.length;
+    },
+  };
 }
 
 export const useForge = create<ForgeState>()(
@@ -55,14 +105,15 @@ export const useForge = create<ForgeState>()(
         })),
 
       updatePrompt: (id, patch) =>
-        set((s) => ({
-          preset: {
-            ...s.preset,
-            prompts: s.preset.prompts.map((p) =>
-              p.identifier === id ? { ...p, ...patch } : p,
-            ),
-          },
-        })),
+        set((s) => {
+          // First match only: duplicate identifiers exist in broken imports, and
+          // the Editor displays the first - patching all copies destroys content.
+          const idx = s.preset.prompts.findIndex((p) => p.identifier === id);
+          if (idx === -1) return s;
+          const prompts = [...s.preset.prompts];
+          prompts[idx] = { ...prompts[idx], ...patch };
+          return { preset: { ...s.preset, prompts } };
+        }),
 
       toggle: (id) =>
         set((s) => ({
@@ -71,33 +122,32 @@ export const useForge = create<ForgeState>()(
             order: s.preset.order.map((e) =>
               e.identifier === id ? { ...e, enabled: !e.enabled } : e,
             ),
+            // Keep the informational prompt-level flag in sync where it exists.
+            prompts: s.preset.prompts.map((p) =>
+              p.identifier === id && p.enabled !== undefined && !p.marker
+                ? { ...p, enabled: !s.preset.order.find((e) => e.identifier === id)?.enabled }
+                : p,
+            ),
           },
         })),
-
-      move: (id, delta) =>
-        set((s) => {
-          const order = [...s.preset.order];
-          const i = order.findIndex((e) => e.identifier === id);
-          const j = i + delta;
-          if (i === -1 || j < 0 || j >= order.length) return s;
-          [order[i], order[j]] = [order[j], order[i]];
-          return { preset: { ...s.preset, order } };
-        }),
 
       moveTo: (id, beforeId) =>
         set((s) => {
           if (id === beforeId) return s;
           const order = [...s.preset.order];
-          const i = order.findIndex((e) => e.identifier === id);
-          if (i === -1) return s;
-          const [entry] = order.splice(i, 1);
-          const j = beforeId === null ? order.length : order.findIndex((e) => e.identifier === beforeId);
-          if (j === -1) return s;
-          order.splice(j, 0, entry);
+          const src = order.findIndex((e) => e.identifier === id);
+          if (src === -1) return s;
+          const dstOrig = beforeId === null ? order.length : order.findIndex((e) => e.identifier === beforeId);
+          if (dstOrig === -1) return s;
+          const [entry] = order.splice(src, 1);
+          // Insert at the target's ORIGINAL index: after removal this lands the
+          // entry after the hovered row when dragging down (so down-by-one works)
+          // and before it when dragging up.
+          order.splice(beforeId === null ? order.length : dstOrig, 0, entry);
           return { preset: { ...s.preset, order } };
         }),
 
-      addModule: (partial = {}) => {
+      addModule: (partial = {}, afterId) => {
         const name = partial.name ?? 'New Module';
         const id = partial.identifier ?? slugify(name);
         const entry: PromptEntry = {
@@ -114,24 +164,24 @@ export const useForge = create<ForgeState>()(
           forbid_overrides: false,
           ...partial,
         };
-        set((s) => {
-          const order = [...s.preset.order];
-          const sel = s.selectedId;
-          const selIdx = sel ? order.findIndex((e) => e.identifier === sel) : -1;
-          const insertAt =
-            selIdx !== -1 ? selIdx + 1 : order.findIndex((e) => e.identifier === 'main') + 1;
-          order.splice(insertAt, 0, { identifier: id, enabled: !!entry.enabled });
-          return {
-            preset: { ...s.preset, prompts: [...s.preset.prompts, entry], order },
-            selectedId: id,
-          };
-        });
+        set((s) => ({
+          preset: {
+            ...s.preset,
+            prompts: [...s.preset.prompts, entry],
+            order: insertIntoOrder(
+              s.preset.order,
+              [{ identifier: id, enabled: !!entry.enabled }],
+              afterId ?? s.selectedId ?? undefined,
+            ),
+          },
+          selectedId: id,
+        }));
         return id;
       },
 
       removeModule: (id) => {
         const p = get().preset.prompts.find((x) => x.identifier === id);
-        if (p?.system_prompt || p?.marker) return; // protect built-ins
+        if (isProtected(p)) return;
         set((s) => ({
           preset: {
             ...s.preset,
@@ -142,13 +192,65 @@ export const useForge = create<ForgeState>()(
         }));
       },
 
+      applyWizard: (params, main, modules) =>
+        set((s) => {
+          const prompts = [...s.preset.prompts];
+          if (main !== undefined) {
+            const mainIdx = prompts.findIndex((p) => p.identifier === 'main');
+            if (mainIdx !== -1) {
+              prompts[mainIdx] = { ...prompts[mainIdx], content: main };
+            } else {
+              prompts.unshift({
+                identifier: 'main',
+                name: 'Main Prompt',
+                system_prompt: true,
+                role: 'system',
+                content: main,
+                marker: false,
+              });
+            }
+          }
+          prompts.push(...modules);
+          const order = insertIntoOrder(
+            s.preset.order.some((e) => e.identifier === 'main')
+              ? s.preset.order
+              : [{ identifier: 'main', enabled: true }, ...s.preset.order],
+            modules.map((m) => ({ identifier: m.identifier, enabled: !!m.enabled })),
+            'main',
+          );
+          return {
+            preset: {
+              ...s.preset,
+              params: { ...s.preset.params, ...params },
+              prompts,
+              order,
+            },
+            selectedId: null,
+          };
+        }),
+
       setProvider: (provider) => set({ provider }),
       setWizardOpen: (wizardOpen) => set({ wizardOpen }),
       setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
     }),
     {
       name: 'preset-forge',
+      version: 1,
+      storage: createJSONStorage(() => debouncedStorage(400)),
       partialize: (s) => ({ preset: s.preset, provider: s.provider }),
+      migrate: (persisted) => persisted,
+      // Shape-normalize on EVERY rehydrate (not just version bumps): HMR or an
+      // old tab can persist a preset missing newer fields under the current version.
+      merge: (persisted, current) => {
+        const p = persisted as { preset?: WorkingPreset; provider?: ProviderConfig } | undefined;
+        const preset = p?.preset;
+        if (preset) {
+          preset.extraOrders ??= [];
+          preset.hadPrompts ??= true;
+          preset.importNotes ??= { wasWrapped: false, hadFlatOrder: false };
+        }
+        return { ...current, ...(p ?? {}) };
+      },
     },
   ),
 );

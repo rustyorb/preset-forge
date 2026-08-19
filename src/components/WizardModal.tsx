@@ -1,36 +1,49 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForge } from '../store';
 import { generateModuleContent, generatePlan, type WizardPlan } from '../lib/gen';
 import { slugify } from '../lib/preset';
-import type { PlannedModule } from '../lib/types';
+import type { PromptEntry } from '../lib/types';
 
 type Phase = 'describe' | 'planning' | 'plan' | 'generating' | 'error';
 
 export default function WizardModal() {
-  const { wizardOpen, setWizardOpen, provider, preset, setParam, updatePrompt, addModule, select } =
-    useForge();
+  const { wizardOpen, setWizardOpen, provider, preset, applyWizard } = useForge();
   const [phase, setPhase] = useState<Phase>('describe');
   const [description, setDescription] = useState('');
   const [plan, setPlan] = useState<WizardPlan | null>(null);
+  const [applyMain, setApplyMain] = useState(true);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
+  // Monotonic run id: cancels/backdrop-closes invalidate in-flight async work.
+  const runId = useRef(0);
 
   if (!wizardOpen) return null;
 
   const close = () => {
+    runId.current++;
     setWizardOpen(false);
     setPhase('describe');
     setPlan(null);
     setError('');
   };
 
+  const requestClose = () => {
+    if (phase === 'generating' || phase === 'planning') return; // explicit Cancel only
+    close();
+  };
+
   const runPlan = async () => {
     if (!description.trim()) return;
+    const id = ++runId.current;
     setPhase('planning');
     try {
-      setPlan(await generatePlan(provider, description));
+      const result = await generatePlan(provider, description);
+      if (runId.current !== id) return; // cancelled/superseded
+      setPlan(result);
+      setApplyMain(!!result.main);
       setPhase('plan');
     } catch (e) {
+      if (runId.current !== id) return;
       setError(String(e));
       setPhase('error');
     }
@@ -48,37 +61,47 @@ export default function WizardModal() {
 
   const runGenerate = async () => {
     if (!plan) return;
+    const id = ++runId.current;
     setPhase('generating');
     try {
-      for (const [k, v] of Object.entries(plan.params ?? {})) setParam(k, v);
-      if (plan.main) updatePrompt('main', { content: plan.main });
-
-      const mods: PlannedModule[] = plan.modules;
-      for (let i = 0; i < mods.length; i++) {
-        const m = mods[i];
-        setProgress(`Generating ${i + 1}/${mods.length}: ${m.name}`);
+      // Generate everything FIRST; commit to the store once, atomically.
+      // A mid-loop failure or cancel leaves the preset completely untouched.
+      const modules: PromptEntry[] = [];
+      for (let i = 0; i < plan.modules.length; i++) {
+        const m = plan.modules[i];
+        setProgress(`Generating ${i + 1}/${plan.modules.length}: ${m.name}`);
         const content = await generateModuleContent(provider, description, m);
-        addModule({
+        if (runId.current !== id) return; // cancelled - discard everything
+        modules.push({
           identifier: slugify(m.name),
           name: m.name,
+          system_prompt: false,
+          marker: false,
+          enabled: m.enabled,
           role: m.role,
           content,
-          enabled: m.enabled,
           injection_position: m.placement === 'in_chat' ? 1 : 0,
           injection_depth: m.depth,
           injection_order: m.order,
+          forbid_overrides: false,
         });
       }
-      select(null);
+      applyWizard(plan.params, applyMain ? plan.main : undefined, modules);
       close();
     } catch (e) {
+      if (runId.current !== id) return;
       setError(String(e));
       setPhase('error');
     }
   };
 
+  const cancelRun = () => {
+    runId.current++;
+    setPhase(plan ? 'plan' : 'describe');
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={close}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={requestClose}>
       <div
         className="flex max-h-[85vh] w-[38rem] flex-col rounded-lg border border-zinc-800 bg-zinc-950 p-5"
         onClick={(e) => e.stopPropagation()}
@@ -117,6 +140,16 @@ export default function WizardModal() {
           <div className="py-10 text-center text-sm text-zinc-400">
             <div className="mb-2 animate-pulse text-2xl">✨</div>
             {phase === 'planning' ? 'Asking the model for a module plan…' : progress}
+            <div className="mt-4">
+              <button onClick={cancelRun} className="rounded bg-zinc-800 px-4 py-1.5 text-sm hover:bg-zinc-700">
+                Cancel
+              </button>
+            </div>
+            {phase === 'generating' && (
+              <div className="mt-2 text-xs text-zinc-600">
+                Nothing is applied to your preset until every module is generated.
+              </div>
+            )}
           </div>
         )}
 
@@ -126,6 +159,19 @@ export default function WizardModal() {
               Proposed modules — uncheck "on" to make one opt-in, then generate. Modules are
               added to <b>{preset.name}</b>.
             </p>
+            {plan.main && (
+              <label className="mb-2 flex items-start gap-2 rounded border border-amber-900/50 bg-amber-950/30 p-2 text-xs text-amber-200">
+                <input
+                  type="checkbox"
+                  checked={applyMain}
+                  onChange={() => setApplyMain(!applyMain)}
+                  className="mt-0.5 accent-amber-600"
+                />
+                <span>
+                  <b>Replace Main Prompt</b> with: <i className="text-amber-300/80">{plan.main.slice(0, 160)}{plan.main.length > 160 ? '…' : ''}</i>
+                </span>
+              </label>
+            )}
             <div className="flex-1 overflow-y-auto rounded border border-zinc-800">
               {plan.modules.map((m, i) => (
                 <div key={i} className="flex items-start gap-2 border-b border-zinc-900 p-2 text-sm">
@@ -167,7 +213,7 @@ export default function WizardModal() {
           <>
             <div className="rounded bg-red-950/50 p-3 text-sm text-red-300">{error}</div>
             <div className="mt-3 flex justify-end">
-              <button onClick={() => setPhase('describe')} className="rounded bg-zinc-800 px-4 py-1.5 text-sm">
+              <button onClick={() => setPhase(plan ? 'plan' : 'describe')} className="rounded bg-zinc-800 px-4 py-1.5 text-sm">
                 Back
               </button>
             </div>

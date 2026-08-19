@@ -41,7 +41,13 @@ export default function Outline() {
             <div
               key={e.identifier}
               draggable
-              onDragStart={() => (dragId.current = e.identifier)}
+              onDragStart={(ev) => {
+                // Firefox refuses to start a drag unless data is set.
+                ev.dataTransfer.setData('text/plain', e.identifier);
+                ev.dataTransfer.effectAllowed = 'move';
+                dragId.current = e.identifier;
+              }}
+              onDragEnd={() => (dragId.current = null)}
               onDragOver={(ev) => ev.preventDefault()}
               onDrop={(ev) => {
                 ev.preventDefault();

@@ -25,15 +25,35 @@ Respond with ONLY a JSON object:
 const CONTENT_SYSTEM = `You write the content of one SillyTavern preset module. Output ONLY the module content as plain text - no JSON, no markdown fences, no commentary. Use {{char}} / {{user}} macros where natural. Follow the token-size guidance you are given. Write instructions to the AI (imperative voice), not descriptions about them.`;
 
 export interface WizardPlan {
-  params: Record<string, unknown>;
+  params: Record<string, number>;
   main?: string;
   modules: PlannedModule[];
 }
+
+/** Sampler keys the wizard may set; everything else the LLM returns is dropped. */
+const PLAN_PARAM_WHITELIST = new Set([
+  'temperature',
+  'top_p',
+  'top_k',
+  'min_p',
+  'repetition_penalty',
+  'frequency_penalty',
+  'presence_penalty',
+  'openai_max_tokens',
+  'openai_max_context',
+]);
 
 export async function generatePlan(cfg: ProviderConfig, description: string): Promise<WizardPlan> {
   const raw = await llmChat(cfg, PLAN_SYSTEM, description);
   const plan = extractJson<WizardPlan>(raw);
   if (!Array.isArray(plan.modules)) throw new Error('Plan has no modules array');
+  const params: Record<string, number> = {};
+  for (const [k, v] of Object.entries(plan.params ?? {})) {
+    const n = Number(v);
+    if (PLAN_PARAM_WHITELIST.has(k) && Number.isFinite(n)) params[k] = n;
+  }
+  plan.params = params;
+  plan.main = typeof plan.main === 'string' && plan.main.trim() ? plan.main : undefined;
   plan.modules = plan.modules.map((m) => ({
     name: String(m.name ?? 'Module'),
     brief: String(m.brief ?? ''),

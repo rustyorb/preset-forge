@@ -23,15 +23,14 @@ export default function SettingsModal() {
             value={provider.kind}
             onChange={(e) => {
               const kind = e.target.value as typeof provider.kind;
-              set({
-                kind,
-                baseUrl:
-                  kind === 'anthropic'
-                    ? 'https://api.anthropic.com'
-                    : provider.baseUrl.includes('anthropic')
-                      ? 'http://localhost:1234/v1'
-                      : provider.baseUrl,
-              });
+              const DEFAULTS = {
+                openai: 'http://localhost:1234/v1',
+                anthropic: 'https://api.anthropic.com',
+              };
+              // Only swap the URL when it's still a stock default -
+              // never clobber a custom endpoint the user typed.
+              const isStock = Object.values(DEFAULTS).includes(provider.baseUrl);
+              set({ kind, baseUrl: isStock ? DEFAULTS[kind] : provider.baseUrl });
             }}
             className="w-full rounded bg-zinc-900 px-2 py-1.5"
           >
@@ -54,6 +53,7 @@ export default function SettingsModal() {
           <span className="mb-1 block text-zinc-400">API key (stored in this browser only)</span>
           <input
             type="password"
+            autoComplete="off"
             value={provider.apiKey}
             onChange={(e) => set({ apiKey: e.target.value })}
             className="w-full rounded bg-zinc-900 px-2 py-1.5 font-mono text-xs"

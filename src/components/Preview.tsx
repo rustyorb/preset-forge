@@ -14,6 +14,7 @@ const SOURCE_BADGE: Record<string, string> = {
   marker: 'bg-zinc-800 text-zinc-400',
   chat: 'bg-zinc-900 text-zinc-500',
   injection: 'bg-sky-950 text-sky-300',
+  note: 'bg-amber-950 text-amber-300',
 };
 
 export default function Preview() {

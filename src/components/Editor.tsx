@@ -2,7 +2,17 @@ import { useState } from 'react';
 import { useForge } from '../store';
 import { estimateTokens } from '../lib/tokens';
 import { refineContent } from '../lib/gen';
+import { DEFAULT_IDENTIFIERS } from '../lib/stDefaults';
 import type { Role } from '../lib/types';
+
+/** Commit a numeric input only when it parses; ignore empty/NaN mid-edit states. */
+function numericHandler(commit: (n: number) => void) {
+  return (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value === '') return;
+    const n = Number(e.target.value);
+    if (Number.isFinite(n)) commit(n);
+  };
+}
 
 export default function Editor() {
   const { preset, selectedId, updatePrompt, removeModule, provider } = useForge();
@@ -32,10 +42,10 @@ export default function Editor() {
   }
 
   const inChat = p.injection_position === 1;
-  const isCore = !!p.system_prompt;
+  const isCore = DEFAULT_IDENTIFIERS.has(p.identifier);
 
   const runRefine = async () => {
-    if (!refineText.trim()) return;
+    if (!refineText.trim() || busy) return;
     setBusy(true);
     setError('');
     try {
@@ -106,9 +116,9 @@ export default function Editor() {
                 type="number"
                 min={0}
                 value={p.injection_depth ?? 4}
-                onChange={(e) =>
-                  updatePrompt(p.identifier, { injection_depth: Number(e.target.value) })
-                }
+                onChange={numericHandler((n) =>
+                  updatePrompt(p.identifier, { injection_depth: Math.max(0, Math.floor(n)) }),
+                )}
                 className="w-16 rounded bg-zinc-900 px-2 py-1"
               />
             </label>
@@ -117,9 +127,9 @@ export default function Editor() {
               <input
                 type="number"
                 value={p.injection_order ?? 100}
-                onChange={(e) =>
-                  updatePrompt(p.identifier, { injection_order: Number(e.target.value) })
-                }
+                onChange={numericHandler((n) =>
+                  updatePrompt(p.identifier, { injection_order: Math.floor(n) }),
+                )}
                 className="w-20 rounded bg-zinc-900 px-2 py-1"
               />
             </label>
@@ -129,13 +139,6 @@ export default function Editor() {
           ~{estimateTokens(p.content ?? '')} tokens
         </span>
       </div>
-
-      {!inChat && (p.injection_depth ?? 4) !== 4 && (
-        <div className="rounded border border-amber-900 bg-amber-950/40 px-3 py-1.5 text-xs text-amber-300">
-          Depth {p.injection_depth} is set but position is Relative — depth has no effect
-          unless position is In-Chat.
-        </div>
-      )}
 
       <textarea
         value={p.content ?? ''}

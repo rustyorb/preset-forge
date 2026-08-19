@@ -8,6 +8,7 @@ import WizardModal from './components/WizardModal';
 
 export default function App() {
   const addModule = useForge((s) => s.addModule);
+  const selectedId = useForge((s) => s.selectedId);
 
   return (
     <div className="flex h-screen flex-col">
@@ -29,7 +30,8 @@ export default function App() {
           <Outline />
         </aside>
         <main className="min-w-0 flex-1">
-          <Editor />
+          {/* Keyed so refine drafts/proposals reset when the selection changes. */}
+          <Editor key={selectedId ?? 'none'} />
         </main>
         <aside className="w-96 shrink-0 border-l border-zinc-800">
           <Preview />

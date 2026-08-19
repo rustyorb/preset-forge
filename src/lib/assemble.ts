@@ -5,7 +5,7 @@ export interface AssembledBlock {
   role: Role;
   content: string;
   /** where this block came from */
-  source: 'prompt' | 'marker' | 'chat' | 'injection';
+  source: 'prompt' | 'marker' | 'chat' | 'injection' | 'note';
   label: string;
   identifier?: string;
   depth?: number;
@@ -27,15 +27,21 @@ const SAMPLE = {
   ],
 };
 
+const MACRO_VALUES: Record<string, string> = {
+  char: SAMPLE.char,
+  user: SAMPLE.user,
+  charIfNotGroup: SAMPLE.char,
+  description: SAMPLE.description,
+  personality: SAMPLE.personality,
+  scenario: SAMPLE.scenario,
+  persona: SAMPLE.persona,
+};
+
 function fillMacros(text: string): string {
-  return text
-    .replaceAll('{{char}}', SAMPLE.char)
-    .replaceAll('{{user}}', SAMPLE.user)
-    .replaceAll('{{charIfNotGroup}}', SAMPLE.char)
-    .replaceAll('{{description}}', SAMPLE.description)
-    .replaceAll('{{personality}}', SAMPLE.personality)
-    .replaceAll('{{scenario}}', SAMPLE.scenario)
-    .replaceAll('{{persona}}', SAMPLE.persona);
+  return text.replace(
+    /\{\{(char|user|charIfNotGroup|description|personality|scenario|persona)\}\}/g,
+    (_, k: string) => MACRO_VALUES[k],
+  );
 }
 
 function markerContent(id: string): string | null {
@@ -56,20 +62,17 @@ function markerContent(id: string): string | null {
  * Structural simulation of ST's prompt assembly:
  * relative prompts in order (markers expanded with sample data), chat history
  * with In-Chat prompts spliced at injection_depth from the end (depth 0 = last).
- * Within one depth: grouped User -> Assistant -> System, injection_order ascending
- * (per docs.sillytavern.app prompt-manager). Labeled a preview, not a byte-accurate clone.
+ * Same-depth ordering matches openai.js populationInjectionPrompts, not the
+ * (simplified) docs. Labeled a preview, not a byte-accurate clone.
  */
 export function assemblePreview(wp: WorkingPreset): AssembledBlock[] {
   const byId = new Map(wp.prompts.map((p) => [p.identifier, p]));
   const enabledOrder = wp.order.filter((e) => e.enabled);
+  const enabledIds = new Set(enabledOrder.map((e) => e.identifier));
   const blocks: AssembledBlock[] = [];
 
   const absolutePrompts = wp.prompts.filter(
-    (p) =>
-      p.injection_position === 1 &&
-      !p.marker &&
-      p.content &&
-      enabledOrder.some((e) => e.identifier === p.identifier),
+    (p) => p.injection_position === 1 && !p.marker && p.content && enabledIds.has(p.identifier),
   );
 
   const pushChatWithInjections = () => {
@@ -81,14 +84,17 @@ export function assemblePreview(wp: WorkingPreset): AssembledBlock[] {
       const gap = chatLen - depth; // messages before the injection point
       byGap.set(gap, [...(byGap.get(gap) ?? []), p]);
     }
-    const roleRank: Record<string, number> = { user: 0, assistant: 1, system: 2 };
+    // Chronological order at one depth, per ST's populationInjectionPrompts
+    // (order groups processed descending then the whole array is reversed):
+    // ascending injection_order groups; within a group assistant -> user -> system.
+    const roleRank: Record<string, number> = { assistant: 0, user: 1, system: 2 };
     const emitGap = (gap: number) => {
       const ps = byGap.get(gap);
       if (!ps) return;
       ps.sort(
         (a, b) =>
-          roleRank[a.role || 'system'] - roleRank[b.role || 'system'] ||
-          (a.injection_order ?? 100) - (b.injection_order ?? 100),
+          (a.injection_order ?? 100) - (b.injection_order ?? 100) ||
+          roleRank[a.role || 'system'] - roleRank[b.role || 'system'],
       );
       for (const p of ps) {
         blocks.push({
@@ -109,10 +115,12 @@ export function assemblePreview(wp: WorkingPreset): AssembledBlock[] {
     emitGap(chatLen); // depth 0: after the last message
   };
 
+  let chatRendered = false;
   for (const e of enabledOrder) {
     const p = byId.get(e.identifier);
     if (e.identifier === 'chatHistory') {
       pushChatWithInjections();
+      chatRendered = true;
       continue;
     }
     if (!p) continue;
@@ -137,6 +145,17 @@ export function assemblePreview(wp: WorkingPreset): AssembledBlock[] {
       source: 'prompt',
       label: p.name,
       identifier: p.identifier,
+    });
+  }
+
+  if (!chatRendered) {
+    blocks.push({
+      role: 'system',
+      content:
+        `Chat History is disabled or missing from the order - the chat AND all In-Chat injections` +
+        `${absolutePrompts.length ? ` (${absolutePrompts.length} enabled)` : ''} will NOT be sent.`,
+      source: 'note',
+      label: '⚠ no chat history',
     });
   }
 

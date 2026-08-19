@@ -29,6 +29,12 @@ export interface WorkingPreset {
   params: Record<string, unknown>;
   prompts: PromptEntry[];
   order: OrderEntry[];
+  /** per-character (non-dummy) prompt_order entries, preserved verbatim */
+  extraOrders: { character_id: number; order: OrderEntry[] }[];
+  /** false = sampler-only source; export omits prompts/prompt_order unless edited */
+  hadPrompts: boolean;
+  /** import provenance surfaced by lint */
+  importNotes: { wasWrapped: boolean; hadFlatOrder: boolean };
 }
 
 export interface LintFinding {
@@ -53,5 +59,4 @@ export interface PlannedModule {
   order: number;
   enabled: boolean;
   category: string;
-  content?: string;
 }
