@@ -102,6 +102,16 @@ ST's prompt inspector for the same preset + dummy chat).*
 README/MODULE_GUIDE generators, preset snapshots/versioning, NemoPresetExt
 convention interop (dividers, `@tooltip` directives), shareable module packs.
 
+**P4 — Regex kit lane** *(added 2026-08-18: every big preset engine ships regexes)*
+The big engines (NemoEngine, Marinara, Chimera) pair presets with regex scripts —
+prompts shape input, regexes shape output (formatting cleanup, em-dash removal,
+style unification). Verified against ST 1.18 regex engine: presets can embed
+scripts at `extensions.regex_scripts` (user-allowed per preset), or scripts ship
+as standalone JSON. PresetForge lane: a regex script editor tab (find/replace,
+placement flags, live test box like ST's own), attach-to-preset via
+`extensions.regex_scripts`, kit export (preset + standalone script files), and
+generative authoring ("write a regex that strips em-dashes from AI output").
+
 ## Stack
 
 Vite + React + TS + Zustand; virtualized lists (90+ modules); `gpt-tokenizer`
