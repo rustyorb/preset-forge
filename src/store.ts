@@ -13,6 +13,8 @@ interface ForgeState {
   presets: Record<string, WorkingPreset>;
   activeId: string;
   selectedId: string | null;
+  /** reusable module blocks, shared across all presets */
+  library: PromptEntry[];
   provider: ProviderConfig;
   card: CardData | null;
   wizardOpen: boolean;
@@ -44,6 +46,9 @@ interface ForgeState {
   renamePromptContent: (rewrite: (content: string) => string) => void;
   setRegexScripts: (scripts: RegexScript[]) => void;
   upsertReadme: () => void;
+  saveToLibrary: (id: string) => void;
+  insertFromLibrary: (index: number) => void;
+  removeFromLibrary: (index: number) => void;
   setCard: (card: CardData | null) => void;
   setProvider: (p: ProviderConfig) => void;
   setWizardOpen: (open: boolean) => void;
@@ -121,6 +126,7 @@ export const useForge = create<ForgeState>()(
         presets: { [firstId]: newPreset() },
         activeId: firstId,
         selectedId: 'main',
+        library: [],
         provider: {
           service: 'lmstudio',
           kind: 'openai',
@@ -363,6 +369,24 @@ export const useForge = create<ForgeState>()(
           set({ selectedId: 'forge-readme' });
         },
 
+        saveToLibrary: (id) => {
+          const s = get();
+          const p = s.presets[s.activeId].prompts.find((x) => x.identifier === id);
+          if (!p || p.marker) return;
+          // Stored as a template; a fresh identifier is minted on insert.
+          set({ library: [...s.library, structuredClone(p)] });
+        },
+
+        insertFromLibrary: (index) => {
+          const entry = get().library[index];
+          if (!entry) return;
+          const copy: PromptEntry = { ...structuredClone(entry), identifier: slugify(entry.name) };
+          get().addModule(copy);
+        },
+
+        removeFromLibrary: (index) =>
+          set((s) => ({ library: s.library.filter((_, i) => i !== index) })),
+
         setCard: (card) => set({ card }),
         setProvider: (provider) => set({ provider }),
         setWizardOpen: (wizardOpen) => set({ wizardOpen }),
@@ -379,6 +403,7 @@ export const useForge = create<ForgeState>()(
         activeId: s.activeId,
         provider: s.provider,
         card: s.card,
+        library: s.library,
       }),
       migrate: (persisted) => persisted,
       // Shape-normalize on EVERY rehydrate (not just version bumps): HMR or an
@@ -423,6 +448,7 @@ export const useForge = create<ForgeState>()(
           activeId,
           provider,
           card: p.card ?? null,
+          library: (p as { library?: PromptEntry[] }).library ?? [],
         };
       },
     },

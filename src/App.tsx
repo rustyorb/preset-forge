@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useForge } from './store';
 import Toolbar from './components/Toolbar';
 import Outline from './components/Outline';
@@ -10,6 +11,10 @@ import WizardModal from './components/WizardModal';
 export default function App() {
   const addModule = useForge((s) => s.addModule);
   const selectedId = useForge((s) => s.selectedId);
+  const library = useForge((s) => s.library);
+  const insertFromLibrary = useForge((s) => s.insertFromLibrary);
+  const removeFromLibrary = useForge((s) => s.removeFromLibrary);
+  const [libOpen, setLibOpen] = useState(false);
 
   return (
     <div className="flex h-screen flex-col">
@@ -20,14 +25,53 @@ export default function App() {
             <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
               Modules
             </span>
-            <button
-              onClick={() => addModule()}
-              className="rounded bg-zinc-800 px-2 py-0.5 text-xs hover:bg-zinc-700"
-              title="Add module below selection"
-            >
-              + Add
-            </button>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setLibOpen(!libOpen)}
+                className={`rounded px-2 py-0.5 text-xs hover:bg-zinc-700 ${
+                  libOpen ? 'bg-violet-900' : 'bg-zinc-800'
+                }`}
+                title="Module library: reusable blocks shared across presets (☆ Save in the editor adds here)"
+              >
+                📦 {library.length}
+              </button>
+              <button
+                onClick={() => addModule()}
+                className="rounded bg-zinc-800 px-2 py-0.5 text-xs hover:bg-zinc-700"
+                title="Add module below selection"
+              >
+                + Add
+              </button>
+            </div>
           </div>
+          {libOpen && (
+            <div className="max-h-48 overflow-y-auto border-b border-zinc-800 bg-zinc-900/60 p-1">
+              {library.length === 0 && (
+                <div className="p-2 text-xs text-zinc-600">
+                  Empty. Open a module and hit "☆ Save" to keep it as a reusable block.
+                </div>
+              )}
+              {library.map((entry, i) => (
+                <div key={i} className="flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-zinc-900">
+                  <span className="truncate">{entry.name}</span>
+                  <button
+                    onClick={() => insertFromLibrary(i)}
+                    className="ml-auto shrink-0 rounded bg-zinc-800 px-1.5 hover:bg-violet-900"
+                    title="Insert into this preset"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => removeFromLibrary(i)}
+                    className="shrink-0 rounded bg-zinc-800 px-1.5 text-red-400 hover:bg-red-950"
+                    title="Remove from library"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <Outline />
         </aside>
         <main className="min-w-0 flex-1">

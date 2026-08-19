@@ -16,7 +16,8 @@ function numericHandler(commit: (n: number) => void) {
 
 export default function Editor() {
   const preset = useActivePreset();
-  const { selectedId, updatePrompt, removeModule, provider, jumpTo, setJumpTo } = useForge();
+  const { selectedId, updatePrompt, removeModule, provider, jumpTo, setJumpTo, saveToLibrary } =
+    useForge();
   const [refineText, setRefineText] = useState('');
   const [proposed, setProposed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -84,6 +85,13 @@ export default function Editor() {
           onChange={(e) => updatePrompt(p.identifier, { name: e.target.value })}
           className="flex-1 rounded bg-zinc-900 px-3 py-1.5 text-lg outline-none ring-violet-600 focus:ring-1"
         />
+        <button
+          onClick={() => saveToLibrary(p.identifier)}
+          className="rounded px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-800"
+          title="Save a copy of this module to the shared library (📦 in the outline header)"
+        >
+          ☆ Save
+        </button>
         {!isCore && (
           <button
             onClick={() => removeModule(p.identifier)}
