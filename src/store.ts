@@ -4,6 +4,9 @@ import type { CardData } from './lib/cards';
 import type { OrderEntry, PromptEntry, ProviderConfig, WorkingPreset } from './lib/types';
 import { newPreset, normalizePreset, slugify } from './lib/preset';
 import { DEFAULT_IDENTIFIERS } from './lib/stDefaults';
+import { groupSiblings } from './lib/groups';
+import { generateReadmeContent } from './lib/readme';
+import { writeRegexScripts, type RegexScript } from './lib/regex';
 
 interface ForgeState {
   /** preset library: id -> preset; activeId always exists in the map */
@@ -39,6 +42,8 @@ interface ForgeState {
     modules: PromptEntry[],
   ) => void;
   renamePromptContent: (rewrite: (content: string) => string) => void;
+  setRegexScripts: (scripts: RegexScript[]) => void;
+  upsertReadme: () => void;
   setCard: (card: CardData | null) => void;
   setProvider: (p: ProviderConfig) => void;
   setWizardOpen: (open: boolean) => void;
@@ -195,16 +200,23 @@ export const useForge = create<ForgeState>()(
           }),
 
         toggle: (id) =>
-          patchActive((p) => ({
-            ...p,
-            order: p.order.map((e) => (e.identifier === id ? { ...e, enabled: !e.enabled } : e)),
-            // Keep the informational prompt-level flag in sync where it exists.
-            prompts: p.prompts.map((x) =>
-              x.identifier === id && x.enabled !== undefined && !x.marker
-                ? { ...x, enabled: !p.order.find((e) => e.identifier === id)?.enabled }
-                : x,
-            ),
-          })),
+          patchActive((p) => {
+            const turningOn = !p.order.find((e) => e.identifier === id)?.enabled;
+            // 🔗 exclusion groups: enabling one member disables its siblings.
+            const off = new Set(turningOn ? groupSiblings(p, id) : []);
+            const flag = (ident: string, current: boolean) =>
+              ident === id ? turningOn : off.has(ident) ? false : current;
+            return {
+              ...p,
+              order: p.order.map((e) => ({ ...e, enabled: flag(e.identifier, e.enabled) })),
+              // Keep the informational prompt-level flag in sync where it exists.
+              prompts: p.prompts.map((x) =>
+                x.enabled !== undefined && !x.marker
+                  ? { ...x, enabled: flag(x.identifier, x.enabled) }
+                  : x,
+              ),
+            };
+          }),
 
         setEnabled: (flags) =>
           patchActive((p) => ({
@@ -315,6 +327,41 @@ export const useForge = create<ForgeState>()(
                 : x,
             ),
           })),
+
+        setRegexScripts: (scripts) =>
+          patchActive((p) => ({ ...p, params: writeRegexScripts(p.params, scripts) })),
+
+        upsertReadme: () => {
+          const s = get();
+          const wp = s.presets[s.activeId];
+          const content = generateReadmeContent(wp);
+          if (wp.prompts.some((p) => p.identifier === 'forge-readme')) {
+            get().updatePrompt('forge-readme', { content });
+          } else {
+            patchActive((p) => ({
+              ...p,
+              prompts: [
+                ...p.prompts,
+                {
+                  identifier: 'forge-readme',
+                  name: '📖 README',
+                  system_prompt: false,
+                  marker: false,
+                  enabled: false,
+                  role: 'system' as const,
+                  content,
+                  injection_position: 0 as const,
+                  injection_depth: 4,
+                  injection_order: 100,
+                  forbid_overrides: false,
+                },
+              ],
+              // README rides at the very top of the manager list, disabled.
+              order: [{ identifier: 'forge-readme', enabled: false }, ...p.order],
+            }));
+          }
+          set({ selectedId: 'forge-readme' });
+        },
 
         setCard: (card) => set({ card }),
         setProvider: (provider) => set({ provider }),

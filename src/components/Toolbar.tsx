@@ -18,6 +18,7 @@ export default function Toolbar() {
     setWizardOpen,
     setSettingsOpen,
     setParam,
+    upsertReadme,
   } = useForge();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -133,6 +134,34 @@ export default function Toolbar() {
           title="Import a preset into a new slot"
         >
           Import
+        </button>
+        <button
+          onClick={async () => {
+            const url = window.prompt('URL of a preset .json (e.g. a GitHub raw link):');
+            if (!url) return;
+            try {
+              const res = await window.fetch(url);
+              if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+              const raw = await res.json();
+              const name = decodeURIComponent(
+                url.split('/').pop()?.replace(/\.json$/i, '') ?? 'from-url',
+              );
+              importRaw(raw, name);
+            } catch (e) {
+              alert(`URL import failed: ${e}\n(Some hosts block browser fetches - download the file and use Import instead.)`);
+            }
+          }}
+          className="rounded bg-zinc-800 px-2 py-1 text-sm hover:bg-zinc-700"
+          title="Import a preset from a URL (GitHub raw links work)"
+        >
+          🌐
+        </button>
+        <button
+          onClick={upsertReadme}
+          className="rounded bg-zinc-800 px-2 py-1 text-sm hover:bg-zinc-700"
+          title="Generate/update a 📖 README module documenting this preset's toggles"
+        >
+          📖
         </button>
         <button
           onClick={onExport}

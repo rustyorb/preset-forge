@@ -1,5 +1,7 @@
 import type { LintFinding, WorkingPreset } from './types';
 import { DEFAULT_IDENTIFIERS, DEPRECATED_KEYS, UNSAFE_EXPORT_KEYS } from './stDefaults';
+import { conflictingGroups } from './groups';
+import { readRegexScripts, validateRegexScript } from './regex';
 
 const VALID_ROLES = new Set(['system', 'user', 'assistant']);
 const DIVIDER_CHARS = ['━', '─', '═', '▬', '➤', '▼', '👇'];
@@ -114,6 +116,20 @@ export function lintPreset(wp: WorkingPreset): LintFinding[] {
         identifier: e.identifier,
         message: `order references missing prompt "${e.identifier}" (ST skips it)`,
       });
+    }
+  }
+
+  for (const g of conflictingGroups(wp)) {
+    out.push({
+      level: 'warn',
+      message: `🔗 group "${g.key}" has ${g.names.length} enabled at once (pick one): ${g.names.join(' + ')}`,
+    });
+  }
+
+  for (const script of readRegexScripts(wp)) {
+    const err_ = validateRegexScript(script);
+    if (err_ && !script.disabled) {
+      out.push({ level: 'error', message: `regex "${script.scriptName}": ${err_}` });
     }
   }
 

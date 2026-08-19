@@ -9,6 +9,8 @@ import {
   makeGetvarRedirect,
   makeVarRenamer,
 } from '../lib/macros';
+import { readRegexScripts } from '../lib/regex';
+import RegexTab from './RegexTab';
 
 const ROLE_STYLE: Record<string, string> = {
   system: 'border-violet-800/60',
@@ -27,7 +29,7 @@ export default function Preview() {
   const preset = useActivePreset();
   const { select, setJumpTo, card, setCard, setAdvisorOpen, provider, renamePromptContent } =
     useForge();
-  const [tab, setTab] = useState<'context' | 'lint' | 'vars'>('context');
+  const [tab, setTab] = useState<'context' | 'lint' | 'vars' | 'regex'>('context');
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameTo, setRenameTo] = useState('');
   const cardFileRef = useRef<HTMLInputElement>(null);
@@ -76,6 +78,7 @@ export default function Preview() {
             ['context', 'Context'],
             ['lint', `Lint ${errs ? `✕${errs}` : warns ? `⚠${warns}` : '✓'}`],
             ['vars', `Vars (${vars.length})`],
+            ['regex', `Regex (${readRegexScripts(preset).length})`],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -194,6 +197,8 @@ export default function Preview() {
           ))}
         </div>
       )}
+
+      {tab === 'regex' && <RegexTab />}
 
       {tab === 'vars' && (
         <div className="flex-1 overflow-y-auto p-2">

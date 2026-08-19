@@ -93,4 +93,66 @@ const check = (ok: boolean, label: string) => {
   console.log(`  (${firstMes} of sampled cards had a first_mes; scene ordering verified for each)`);
 }
 
+// --- regex scripts ---
+{
+  const { runRegexScript, validateRegexScript, newRegexScript, writeRegexScripts, readRegexScripts } =
+    await import('../src/lib/regex');
+  const s = { ...newRegexScript(), findRegex: '/—/g', replaceString: ',' };
+  check(runRegexScript(s, 'a — b — c') === 'a , b , c', 'regex: em-dash removal runs');
+  const s2 = { ...newRegexScript(), findRegex: '/"([^"]+)"/g', replaceString: '“$1”' };
+  check(runRegexScript(s2, 'She said "hi" and "bye".') === 'She said “hi” and “bye”.', 'regex: capture groups work');
+  const s3 = { ...newRegexScript(), findRegex: '/\\bvery\\b/g', replaceString: '[{{match}}]' };
+  check(runRegexScript(s3, 'very good, very bad') === '[very] good, [very] bad', 'regex: {{match}} substitution');
+  check(validateRegexScript({ ...newRegexScript(), findRegex: '/[unclosed/g' }) !== null, 'regex: invalid pattern caught');
+  const params = writeRegexScripts({ temperature: 1 }, [s]);
+  const back = readRegexScripts({ name: '', params, prompts: [], order: [], extraOrders: [], hadPrompts: true, importNotes: { wasWrapped: false, hadFlatOrder: false } });
+  check(back.length === 1 && back[0].findRegex === '/—/g', 'regex: round-trips through extensions.regex_scripts');
+}
+
+// --- exclusion groups ---
+{
+  const { parseGroupKey, conflictingGroups } = await import('../src/lib/groups');
+  check(parseGroupKey('🔗 POV: First Person') === 'pov', 'groups: parses 🔗 Group: Variant');
+  check(parseGroupKey('🌹 Romance') === null && parseGroupKey('🔗 Simple HTML') === null, 'groups: non-grouped names ignored');
+  const wp = {
+    name: 't', params: {}, extraOrders: [], hadPrompts: true,
+    importNotes: { wasWrapped: false, hadFlatOrder: false },
+    prompts: [
+      { identifier: 'a', name: '🔗 POV: First' },
+      { identifier: 'b', name: '🔗 POV: Third' },
+      { identifier: 'c', name: '🔗 Stance: Soft' },
+    ],
+    order: [
+      { identifier: 'a', enabled: true },
+      { identifier: 'b', enabled: true },
+      { identifier: 'c', enabled: true },
+    ],
+  };
+  const conf = conflictingGroups(wp);
+  check(conf.length === 1 && conf[0].key === 'pov', 'groups: conflict detected only for pov');
+}
+
+// --- readme generator ---
+{
+  const { generateReadmeContent } = await import('../src/lib/readme');
+  const wp = {
+    name: 'TestPreset', params: {}, extraOrders: [], hadPrompts: true,
+    importNotes: { wasWrapped: false, hadFlatOrder: false },
+    prompts: [
+      { identifier: 'm1', name: '📜 Core', content: 'x' },
+      { identifier: 'm2', name: '🔗 POV: First', content: 'x' },
+      { identifier: 'm3', name: '🔗 POV: Third', content: 'x', injection_position: 1 as const, injection_depth: 2 },
+    ],
+    order: [
+      { identifier: 'm1', enabled: true },
+      { identifier: 'm2', enabled: false },
+      { identifier: 'm3', enabled: false },
+    ],
+  };
+  const md = generateReadmeContent(wp);
+  check(md.includes('ENABLED BY DEFAULT') && md.includes('📜 Core'), 'readme: lists enabled modules');
+  check(md.includes('PICK ONE PER GROUP') && md.includes('pov'), 'readme: documents exclusion groups');
+  check(md.includes('@ depth 2'), 'readme: documents in-chat injections');
+}
+
 process.exit(failures ? 1 : 0);
