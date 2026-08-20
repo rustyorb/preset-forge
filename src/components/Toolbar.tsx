@@ -18,6 +18,7 @@ export default function Toolbar() {
     setName,
     setWizardOpen,
     setSettingsOpen,
+    setSnapshotsOpen,
     setParam,
     upsertReadme,
   } = useForge();
@@ -184,6 +185,13 @@ export default function Toolbar() {
           title="Export a distribution kit folder: preset.json + README.md + MODULE_GUIDE.md + standalone regex scripts"
         >
           🧰
+        </button>
+        <button
+          onClick={() => setSnapshotsOpen(true)}
+          className="rounded bg-zinc-800 px-2 py-1 text-sm hover:bg-zinc-700"
+          title="Snapshots: save/restore/diff versions of this preset"
+        >
+          🕒
         </button>
         <button
           onClick={() => setSettingsOpen(true)}

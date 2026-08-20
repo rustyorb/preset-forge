@@ -7,6 +7,7 @@ import { DEFAULT_IDENTIFIERS } from './lib/stDefaults';
 import { groupSiblings } from './lib/groups';
 import { generateReadmeContent } from './lib/readme';
 import { writeRegexScripts, type RegexScript } from './lib/regex';
+import { pushSnapshot } from './lib/snapshots';
 
 interface ForgeState {
   /** preset library: id -> preset; activeId always exists in the map */
@@ -49,6 +50,10 @@ interface ForgeState {
   saveToLibrary: (id: string) => void;
   insertFromLibrary: (index: number) => void;
   removeFromLibrary: (index: number) => void;
+  takeSnapshot: (label: string) => void;
+  restorePreset: (preset: WorkingPreset) => void;
+  snapshotsOpen: boolean;
+  setSnapshotsOpen: (open: boolean) => void;
   setCard: (card: CardData | null) => void;
   setProvider: (p: ProviderConfig) => void;
   setWizardOpen: (open: boolean) => void;
@@ -294,6 +299,8 @@ export const useForge = create<ForgeState>()(
         },
 
         applyWizard: (params, main, modules) => {
+          // Wizard mutations are the biggest single edits - auto-snapshot first.
+          get().takeSnapshot('before wizard');
           patchActive((wp) => {
             const prompts = [...wp.prompts];
             if (main !== undefined) {
@@ -386,6 +393,24 @@ export const useForge = create<ForgeState>()(
 
         removeFromLibrary: (index) =>
           set((s) => ({ library: s.library.filter((_, i) => i !== index) })),
+
+        takeSnapshot: (label) => {
+          const s = get();
+          pushSnapshot(s.activeId, s.presets[s.activeId], label);
+        },
+
+        restorePreset: (preset) => {
+          // Keep an escape hatch: snapshot the current state before replacing it.
+          const s = get();
+          pushSnapshot(s.activeId, s.presets[s.activeId], 'before restore');
+          set({
+            presets: { ...s.presets, [s.activeId]: structuredClone(preset) },
+            selectedId: null,
+          });
+        },
+
+        snapshotsOpen: false,
+        setSnapshotsOpen: (snapshotsOpen) => set({ snapshotsOpen }),
 
         setCard: (card) => set({ card }),
         setProvider: (provider) => set({ provider }),
