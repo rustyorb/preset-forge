@@ -7,6 +7,7 @@ import Preview from './components/Preview';
 import AdvisorModal from './components/AdvisorModal';
 import SettingsModal from './components/SettingsModal';
 import WizardModal from './components/WizardModal';
+import CommandPalette from './components/CommandPalette';
 
 export default function App() {
   const addModule = useForge((s) => s.addModule);
@@ -85,6 +86,7 @@ export default function App() {
       <SettingsModal />
       <WizardModal />
       <AdvisorModal />
+      <CommandPalette />
     </div>
   );
 }

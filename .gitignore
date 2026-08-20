@@ -3,3 +3,4 @@ dist/
 *.local
 *.tsbuildinfo
 roundtrip_*.json
+public/nemo_test.json
