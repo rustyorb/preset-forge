@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { useActivePreset, useForge } from '../store';
-import { generateModuleContent, generatePlan, type WizardPlan } from '../lib/gen';
+import { generateModuleContent, generatePlan, mapConcurrent, type WizardPlan } from '../lib/gen';
 import { slugify } from '../lib/preset';
+import { DEFAULT_IDENTIFIERS } from '../lib/stDefaults';
 import type { PromptEntry } from '../lib/types';
 
 type Phase = 'describe' | 'planning' | 'plan' | 'generating' | 'error';
@@ -13,10 +14,16 @@ export default function WizardModal() {
   const [description, setDescription] = useState('');
   const [plan, setPlan] = useState<WizardPlan | null>(null);
   const [applyMain, setApplyMain] = useState(true);
+  const [expand, setExpand] = useState(true);
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
   // Monotonic run id: cancels/backdrop-closes invalidate in-flight async work.
   const runId = useRef(0);
+
+  const customModules = preset.prompts.filter(
+    (p) => !p.marker && !DEFAULT_IDENTIFIERS.has(p.identifier),
+  );
+  const canExpand = customModules.length > 0;
 
   if (!wizardOpen) return null;
 
@@ -38,10 +45,14 @@ export default function WizardModal() {
     const id = ++runId.current;
     setPhase('planning');
     try {
-      const result = await generatePlan(provider, description);
+      const result = await generatePlan(
+        provider,
+        description,
+        canExpand && expand ? customModules.map((m) => m.name) : undefined,
+      );
       if (runId.current !== id) return; // cancelled/superseded
       setPlan(result);
-      setApplyMain(!!result.main);
+      setApplyMain(!!result.main && !(canExpand && expand));
       setPhase('plan');
     } catch (e) {
       if (runId.current !== id) return;
@@ -65,29 +76,40 @@ export default function WizardModal() {
     const id = ++runId.current;
     setPhase('generating');
     try {
-      // Generate everything FIRST; commit to the store once, atomically.
-      // A mid-loop failure or cancel leaves the preset completely untouched.
-      const modules: PromptEntry[] = [];
-      for (let i = 0; i < plan.modules.length; i++) {
-        const m = plan.modules[i];
-        setProgress(`Generating ${i + 1}/${plan.modules.length}: ${m.name}`);
-        const content = await generateModuleContent(provider, description, m);
-        if (runId.current !== id) return; // cancelled - discard everything
-        modules.push({
-          identifier: slugify(m.name),
-          name: m.name,
-          system_prompt: false,
-          marker: false,
-          enabled: m.enabled,
-          role: m.role,
-          content,
-          injection_position: m.placement === 'in_chat' ? 1 : 0,
-          injection_depth: m.depth,
-          injection_order: m.order,
-          forbid_overrides: false,
-        });
-      }
-      applyWizard(plan.params, applyMain ? plan.main : undefined, modules);
+      // Generate everything FIRST (3 requests in flight); commit once, atomically.
+      // A mid-run failure or cancel leaves the preset completely untouched.
+      setProgress(`Generating 0/${plan.modules.length}…`);
+      const contents = await mapConcurrent(
+        plan.modules,
+        3,
+        async (m) => {
+          const content = await generateModuleContent(provider, description, m);
+          if (runId.current !== id) throw new Error('cancelled');
+          return content;
+        },
+        (done) => {
+          if (runId.current === id) setProgress(`Generating ${done}/${plan.modules.length}…`);
+        },
+      );
+      if (runId.current !== id) return; // cancelled - discard everything
+      const modules: PromptEntry[] = plan.modules.map((m, i) => ({
+        identifier: slugify(m.name),
+        name: m.name,
+        system_prompt: false,
+        marker: false,
+        enabled: m.enabled,
+        role: m.role,
+        content: contents[i],
+        injection_position: m.placement === 'in_chat' ? 1 : 0,
+        injection_depth: m.depth,
+        injection_order: m.order,
+        forbid_overrides: false,
+      }));
+      applyWizard(
+        expand && canExpand ? {} : plan.params,
+        applyMain ? plan.main : undefined,
+        modules,
+      );
       close();
     } catch (e) {
       if (runId.current !== id) return;
@@ -121,6 +143,20 @@ export default function WizardModal() {
               placeholder='e.g. "A fantasy adventure RP preset with a dice mechanic, 6 stackable genre toggles, 3 NPC stances, and strict no-writing-for-user rules. Balanced creativity."'
               className="min-h-36 resize-none rounded bg-zinc-900 p-3 text-sm outline-none ring-violet-600 focus:ring-1"
             />
+            {canExpand && (
+              <label className="mt-2 flex items-start gap-2 text-xs text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={expand}
+                  onChange={() => setExpand(!expand)}
+                  className="mt-0.5 accent-violet-600"
+                />
+                <span>
+                  <b>Expand mode</b> — add to <b>{preset.name}</b> ({customModules.length} modules):
+                  the plan complements what exists, keeps your Main Prompt and samplers.
+                </span>
+              </label>
+            )}
             <div className="mt-3 flex justify-end gap-2">
               <button onClick={close} className="rounded bg-zinc-800 px-4 py-1.5 text-sm">
                 Cancel

@@ -43,8 +43,20 @@ const PLAN_PARAM_WHITELIST = new Set([
   'openai_max_context',
 ]);
 
-export async function generatePlan(cfg: ProviderConfig, description: string): Promise<WizardPlan> {
-  const raw = await llmChat(cfg, PLAN_SYSTEM, description);
+export async function generatePlan(
+  cfg: ProviderConfig,
+  description: string,
+  existingModules?: string[],
+): Promise<WizardPlan> {
+  const user = existingModules?.length
+    ? `${description}
+
+EXPAND MODE: this preset already exists with the modules below. Plan ONLY new modules that complement them - match their naming style and categories, do not duplicate their functionality, and set "main" to null (the existing main prompt stays).
+
+Existing modules:
+${existingModules.map((n) => `- ${n}`).join('\n')}`
+    : description;
+  const raw = await llmChat(cfg, PLAN_SYSTEM, user);
   const plan = extractJson<WizardPlan>(raw);
   if (!Array.isArray(plan.modules)) throw new Error('Plan has no modules array');
   const params: Record<string, number> = {};
@@ -65,6 +77,27 @@ export async function generatePlan(cfg: ProviderConfig, description: string): Pr
     category: String(m.category ?? 'Features'),
   }));
   return plan;
+}
+
+/** Bounded-concurrency map preserving order; onDone reports completion count. */
+export async function mapConcurrent<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+  onDone?: (done: number) => void,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  let done = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+      onDone?.(++done);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 export async function generateModuleContent(
