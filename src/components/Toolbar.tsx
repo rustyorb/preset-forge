@@ -3,6 +3,7 @@ import { useActivePreset, useForge } from '../store';
 import { exportPreset } from '../lib/preset';
 import { presetTokenStats } from '../lib/tokens';
 import { lintPreset } from '../lib/lint';
+import { exportKitToFolder } from '../lib/kit';
 
 export default function Toolbar() {
   const preset = useActivePreset();
@@ -168,6 +169,21 @@ export default function Toolbar() {
           className="rounded bg-emerald-800 px-3 py-1 text-sm hover:bg-emerald-700"
         >
           Export
+        </button>
+        <button
+          onClick={async () => {
+            if (errs > 0 && !confirm(`${errs} lint error(s) — export the kit anyway?`)) return;
+            try {
+              const n = await exportKitToFolder(preset);
+              alert(`Kit written: ${n} files (preset + README.md + MODULE_GUIDE.md + regex/)`);
+            } catch (e) {
+              if (!String(e).includes('AbortError')) alert(`Kit export failed: ${e}`);
+            }
+          }}
+          className="rounded bg-emerald-900 px-2 py-1 text-sm hover:bg-emerald-800"
+          title="Export a distribution kit folder: preset.json + README.md + MODULE_GUIDE.md + standalone regex scripts"
+        >
+          🧰
         </button>
         <button
           onClick={() => setSettingsOpen(true)}

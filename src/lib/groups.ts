@@ -1,4 +1,18 @@
-import type { WorkingPreset } from './types';
+import type { PromptEntry, WorkingPreset } from './types';
+import { DEFAULT_IDENTIFIERS } from './stDefaults';
+
+/**
+ * A module acts as a section header when it follows a divider convention:
+ * contentless non-core module (Chimera style), an "=== Banner ===" name
+ * (NemoEngine style), or a name led by box-drawing characters.
+ */
+export function isSectionHeader(p: Partial<PromptEntry> | undefined): boolean {
+  if (!p || p.marker || !p.identifier || DEFAULT_IDENTIFIERS.has(p.identifier)) return false;
+  const name = p.name ?? '';
+  if (/^\s*={2,}.*={2,}\s*$/.test(name)) return true;
+  if (/^[━─═▬]{2,}/.test(name)) return true;
+  return !(p.content ?? '').trim();
+}
 
 /**
  * Mutual-exclusion groups by naming convention: modules named

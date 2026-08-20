@@ -1,21 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useActivePreset, useForge } from '../store';
-import { DEFAULT_IDENTIFIERS, MARKER_NAMES } from '../lib/stDefaults';
-
-/**
- * A row acts as a section header when it follows a divider convention:
- * contentless non-core module (Chimera style), an "=== Banner ===" name
- * (NemoEngine style), or a name led by box-drawing characters.
- */
-function isHeaderPrompt(
-  p: { marker?: boolean; content?: string; identifier: string; name?: string } | undefined,
-): boolean {
-  if (!p || p.marker || DEFAULT_IDENTIFIERS.has(p.identifier)) return false;
-  const name = p.name ?? '';
-  if (/^\s*={2,}.*={2,}\s*$/.test(name)) return true;
-  if (/^[━─═▬]{2,}/.test(name)) return true;
-  return !(p.content ?? '').trim();
-}
+import { MARKER_NAMES } from '../lib/stDefaults';
+import { isSectionHeader } from '../lib/groups';
 
 export default function Outline() {
   const preset = useActivePreset();
@@ -35,7 +21,7 @@ export default function Outline() {
     const headers: { id: string; count: number }[] = [];
     const rows = preset.order.map((e) => {
       const p = byId.get(e.identifier);
-      const header = isHeaderPrompt(p);
+      const header = isSectionHeader(p);
       if (header) {
         current = e.identifier;
         headers.push({ id: e.identifier, count: 0 });
