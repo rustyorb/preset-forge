@@ -10,6 +10,8 @@ import WizardModal from './components/WizardModal';
 import CommandPalette from './components/CommandPalette';
 import SnapshotsModal from './components/SnapshotsModal';
 import TcModal from './components/TcModal';
+import StLinkModal from './components/StLinkModal';
+import QrModal from './components/QrModal';
 
 export default function App() {
   const addModule = useForge((s) => s.addModule);
@@ -91,6 +93,8 @@ export default function App() {
       <CommandPalette />
       <SnapshotsModal />
       <TcModal />
+      <StLinkModal />
+      <QrModal />
     </div>
   );
 }

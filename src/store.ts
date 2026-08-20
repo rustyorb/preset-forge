@@ -9,6 +9,7 @@ import { generateReadmeContent } from './lib/readme';
 import { writeRegexScripts, type RegexScript } from './lib/regex';
 import { pushSnapshot } from './lib/snapshots';
 import type { TcKind, TcTemplate } from './lib/tcTemplates';
+import type { QuickReplySet } from './lib/quickReplies';
 
 interface ForgeState {
   /** preset library: id -> preset; activeId always exists in the map */
@@ -61,6 +62,13 @@ interface ForgeState {
   updateTcField: (kind: TcKind, key: string, value: unknown) => void;
   tcOpen: boolean;
   setTcOpen: (open: boolean) => void;
+  stOpen: boolean;
+  setStOpen: (open: boolean) => void;
+  /** Quick Reply sets authored alongside presets */
+  qrSets: QuickReplySet[];
+  setQrSets: (sets: QuickReplySet[]) => void;
+  qrOpen: boolean;
+  setQrOpen: (open: boolean) => void;
   setCard: (card: CardData | null) => void;
   setProvider: (p: ProviderConfig) => void;
   setWizardOpen: (open: boolean) => void;
@@ -435,6 +443,12 @@ export const useForge = create<ForgeState>()(
           }),
         tcOpen: false,
         setTcOpen: (tcOpen) => set({ tcOpen }),
+        stOpen: false,
+        setStOpen: (stOpen) => set({ stOpen }),
+        qrSets: [],
+        setQrSets: (qrSets) => set({ qrSets }),
+        qrOpen: false,
+        setQrOpen: (qrOpen) => set({ qrOpen }),
 
         setCard: (card) => set({ card }),
         setProvider: (provider) => set({ provider }),
@@ -454,6 +468,7 @@ export const useForge = create<ForgeState>()(
         card: s.card,
         library: s.library,
         tc: s.tc,
+        qrSets: s.qrSets,
       }),
       migrate: (persisted) => persisted,
       // Shape-normalize on EVERY rehydrate (not just version bumps): HMR or an
@@ -500,6 +515,7 @@ export const useForge = create<ForgeState>()(
           card: p.card ?? null,
           library: (p as { library?: PromptEntry[] }).library ?? [],
           tc: (p as { tc?: Partial<Record<TcKind, TcTemplate>> }).tc ?? {},
+          qrSets: (p as { qrSets?: QuickReplySet[] }).qrSets ?? [],
         };
       },
     },

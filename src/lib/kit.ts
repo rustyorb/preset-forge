@@ -91,7 +91,7 @@ interface KitFile {
   content: string;
 }
 
-export function buildKitFiles(wp: WorkingPreset): KitFile[] {
+export function buildKitFiles(wp: WorkingPreset, qrSets: { name: string }[] = []): KitFile[] {
   const name = safe(wp.name);
   const files: KitFile[] = [
     { path: [`${name}.json`], content: JSON.stringify(exportPreset(wp), null, 4) },
@@ -104,11 +104,20 @@ export function buildKitFiles(wp: WorkingPreset): KitFile[] {
       content: JSON.stringify(script, null, 4),
     });
   }
+  for (const set of qrSets) {
+    files.push({
+      path: ['quick-replies', `${safe(set.name)}.json`],
+      content: JSON.stringify(set, null, 4),
+    });
+  }
   return files;
 }
 
 /** Write the kit into a user-picked folder (FS Access API, Chromium). */
-export async function exportKitToFolder(wp: WorkingPreset): Promise<number> {
+export async function exportKitToFolder(
+  wp: WorkingPreset,
+  qrSets: { name: string }[] = [],
+): Promise<number> {
   const picker = (
     window as unknown as {
       showDirectoryPicker?: (o?: { mode: string }) => Promise<FileSystemDirectoryHandle>;
@@ -116,7 +125,7 @@ export async function exportKitToFolder(wp: WorkingPreset): Promise<number> {
   ).showDirectoryPicker;
   if (!picker) throw new Error('Folder export needs a Chromium browser (File System Access API)');
   const root = await picker({ mode: 'readwrite' });
-  const files = buildKitFiles(wp);
+  const files = buildKitFiles(wp, qrSets);
   for (const f of files) {
     let dir = root;
     for (const part of f.path.slice(0, -1)) {

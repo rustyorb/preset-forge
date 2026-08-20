@@ -164,6 +164,59 @@ Recommend module states for this character.`;
     }));
 }
 
+// STScript primer distilled from Kyle's st_script_builder command catalog
+// (U:\_Projects\st_script_builder) - the salvaged soul of that project.
+const QR_SYSTEM = `You write SillyTavern Quick Replies. A Quick Reply has a label (button text) and a message: either plain chat text, or STScript when it starts with "/".
+
+STScript essentials:
+- Commands chain with | and the previous result flows in as {{pipe}}.
+  /getvar hp | /echo HP is {{pipe}}
+- Named args: /setvar key=hp 100 ; /echo severity=warning text
+- Closures wrap subscripts: {: /echo inner :} - ALWAYS balance {: and :}.
+- Macros work anywhere: {{char}}, {{user}}, {{lastMessage}}, {{pipe}}, {{roll:d20}}.
+
+Command reference (name - purpose):
+/gen prompt - generate with full context, returns text | /genraw - context-free gen
+/continue - extend last AI reply | /impersonate prompt - write as user | /sysgen - narrator gen
+/send text - send as user | /sendas name=X text - send as character | /sys text - narrator message
+/echo severity=info|warning text - toast | /popup text - blocking popup | /input prompt - ask user, returns entry
+/buttons labels=["A","B"] text - choice popup, returns pick | /setinput text - fill the input bar
+/setvar key=name value | /getvar name | /setglobalvar key=n v | /getglobalvar n | /addvar key=n amount | /incvar n | /flushvar n
+/del N - delete last N messages | /hide range | /unhide range | /comment text - hidden note
+/if left=x rule=eq right=y else={: on-false :} {: on-true :} (rules: eq neq gt gte lt lte in not; the trailing closure is the TRUE branch, else= is a named arg)
+/times count {: body :} - loop | /delay ms | /abort - stop script
+/let x - declare scoped var, /var x 1 sets, /var x or {{var::x}} reads (closure-scoped)
+/trimtokens limit=N direction=end text | /add /sub /mul - math | /rand min max
+
+Rules: prefer SIMPLE scripts (1-4 commands); balance every {: with :}; a literal | inside unquoted text must be escaped as \\|; use /echo for feedback; never invent commands not listed.
+
+Respond with ONLY a JSON array:
+[{"label": "Roll d20", "title": "tooltip text", "message": "/echo You rolled {{roll:d20}}!"}]`;
+
+export interface QrDraft {
+  label: string;
+  title: string;
+  message: string;
+}
+
+export async function generateQuickReplies(
+  cfg: ProviderConfig,
+  description: string,
+  presetContext?: string,
+): Promise<QrDraft[]> {
+  const user = `${presetContext ? `These Quick Replies accompany the preset "${presetContext}".\n` : ''}Create Quick Replies for: ${description}`;
+  const raw = await llmChat(cfg, QR_SYSTEM, user);
+  const drafts = extractJson<QrDraft[]>(raw);
+  if (!Array.isArray(drafts)) throw new Error('Model did not return a QR list');
+  return drafts
+    .filter((d) => d && typeof d.message === 'string' && d.message.trim())
+    .map((d) => ({
+      label: String(d.label ?? 'QR').slice(0, 40),
+      title: String(d.title ?? ''),
+      message: String(d.message),
+    }));
+}
+
 export async function refineContent(
   cfg: ProviderConfig,
   moduleName: string,

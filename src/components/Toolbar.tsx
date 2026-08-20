@@ -173,7 +173,7 @@ export default function Toolbar() {
           onClick={async () => {
             if (errs > 0 && !confirm(`${errs} lint error(s) — export the kit anyway?`)) return;
             try {
-              const n = await exportKitToFolder(preset);
+              const n = await exportKitToFolder(preset, useForge.getState().qrSets);
               alert(`Kit written: ${n} files (preset + README.md + MODULE_GUIDE.md + regex/)`);
             } catch (e) {
               if (!String(e).includes('AbortError')) alert(`Kit export failed: ${e}`);
@@ -183,6 +183,20 @@ export default function Toolbar() {
           title="Export a distribution kit folder: preset.json + README.md + MODULE_GUIDE.md + standalone regex scripts"
         >
           🧰
+        </button>
+        <button
+          onClick={() => useForge.getState().setStOpen(true)}
+          className="rounded bg-sky-900 px-2 py-1 text-sm hover:bg-sky-800"
+          title="SillyTavern link: save/open presets directly in ST's folder"
+        >
+          🔗 ST
+        </button>
+        <button
+          onClick={() => useForge.getState().setQrOpen(true)}
+          className="rounded bg-zinc-800 px-2 py-1 text-sm hover:bg-zinc-700"
+          title="Quick Replies: STScript button sets shipped with the kit"
+        >
+          ⚡
         </button>
         <button
           onClick={() => useForge.getState().setTcOpen(true)}
