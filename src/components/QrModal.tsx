@@ -9,6 +9,8 @@ export default function QrModal() {
   const qrSets = useForge((s) => s.qrSets);
   const setQrSets = useForge((s) => s.setQrSets);
   const provider = useForge((s) => s.provider);
+  const lalib = useForge((s) => s.lalib);
+  const setLalib = useForge((s) => s.setLalib);
   const preset = useActivePreset();
   const [activeIdx, setActiveIdx] = useState(0);
   const [genText, setGenText] = useState('');
@@ -32,7 +34,7 @@ export default function QrModal() {
     setBusy(true);
     setError('');
     try {
-      const drafts = await generateQuickReplies(provider, genText, preset.name);
+      const drafts = await generateQuickReplies(provider, genText, preset.name, lalib);
       let next = set;
       for (const d of drafts) next = addQr(next, d);
       updateSet(next);
@@ -146,6 +148,18 @@ export default function QrModal() {
                   {busy ? '…' : 'Generate'}
                 </button>
               </div>
+              <label
+                className="mt-1.5 flex items-center gap-1.5 text-xs text-zinc-500"
+                title="LenAnderson's LALib extension adds 98 STScript commands (/=, /foreach, /switch, swipe & message surgery…). When checked, generated scripts may use them."
+              >
+                <input
+                  type="checkbox"
+                  checked={lalib}
+                  onChange={() => setLalib(!lalib)}
+                  className="accent-violet-600"
+                />
+                LALib installed (H A I L Lenny) — allow its commands in generated scripts
+              </label>
               {error && <div className="mt-1 text-xs text-red-400">{error}</div>}
             </div>
 

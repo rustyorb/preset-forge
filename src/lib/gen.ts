@@ -193,6 +193,20 @@ Rules: prefer SIMPLE scripts (1-4 commands); balance every {: with :}; a literal
 Respond with ONLY a JSON array:
 [{"label": "Roll d20", "title": "tooltip text", "message": "/echo You rolled {{roll:d20}}!"}]`;
 
+// LenAnderson's LALib extension (github.com/LenAnderson/SillyTavern-LALib):
+// 98 extra STScript commands. Reference distilled from its README.
+const LALIB_PRIMER = `
+The user has the LALib extension installed - these extra commands are ALSO available (prefer them where they simplify a script):
+/= expr - evaluate an expression: /= result = (x + 2) * 3 | /echo {{var::result}} (variables via named args or scoped /let)
+Logic: /test left=x rule=eq right=y | /and ...vals | /or ...vals | /not val
+Branching: /ife (expr) {: :} | /elseif (expr) {: :} | /else {: :} | /switch value + /case value {: :} | /try {: :} | /catch {: :} | /ifempty value=x fallback | /ifnullish
+Loops: /whilee (expr) {: :} | /foreach (list|dict) {: iterates, {{var::item}} {{var::index}} :}
+Lists: /push /pop /shift /unshift /map /filter /find /reduce /sorte /reverse /shuffle /pick (random item) /slice /splice /flatten /join list sep
+Dicts: /dict /keys /getat index=path /setat
+Strings: /split text sep | /trim | /pad-start /pad-end | /substitute - replace macros | /wordcount /sentencecount | /re-test /re-replace find=/re/flags replace=x text | /re-escape
+Chat surgery: /swipes-list /swipes-count /swipes-add /swipes-del /swipes-go /swipes-swipe | /message-edit /message-move /message-get /message-list | /role-swap
+Meta: /qr-add set=X label=Y message - create QRs from scripts | /wi-list-entries /wi-activate - world info | /timestamp | /copy - clipboard | /download | /fireandforget {: :} | /sfx url - play sound | /fetch url | /console-log`;
+
 export interface QrDraft {
   label: string;
   title: string;
@@ -203,9 +217,10 @@ export async function generateQuickReplies(
   cfg: ProviderConfig,
   description: string,
   presetContext?: string,
+  lalib = false,
 ): Promise<QrDraft[]> {
   const user = `${presetContext ? `These Quick Replies accompany the preset "${presetContext}".\n` : ''}Create Quick Replies for: ${description}`;
-  const raw = await llmChat(cfg, QR_SYSTEM, user);
+  const raw = await llmChat(cfg, lalib ? QR_SYSTEM + LALIB_PRIMER : QR_SYSTEM, user);
   const drafts = extractJson<QrDraft[]>(raw);
   if (!Array.isArray(drafts)) throw new Error('Model did not return a QR list');
   return drafts

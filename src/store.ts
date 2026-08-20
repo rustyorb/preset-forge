@@ -69,6 +69,9 @@ interface ForgeState {
   setQrSets: (sets: QuickReplySet[]) => void;
   qrOpen: boolean;
   setQrOpen: (open: boolean) => void;
+  /** user has LenAnderson's LALib extension - QR generation may use its commands */
+  lalib: boolean;
+  setLalib: (on: boolean) => void;
   setCard: (card: CardData | null) => void;
   setProvider: (p: ProviderConfig) => void;
   setWizardOpen: (open: boolean) => void;
@@ -449,6 +452,8 @@ export const useForge = create<ForgeState>()(
         setQrSets: (qrSets) => set({ qrSets }),
         qrOpen: false,
         setQrOpen: (qrOpen) => set({ qrOpen }),
+        lalib: true,
+        setLalib: (lalib) => set({ lalib }),
 
         setCard: (card) => set({ card }),
         setProvider: (provider) => set({ provider }),
@@ -469,6 +474,7 @@ export const useForge = create<ForgeState>()(
         library: s.library,
         tc: s.tc,
         qrSets: s.qrSets,
+        lalib: s.lalib,
       }),
       migrate: (persisted) => persisted,
       // Shape-normalize on EVERY rehydrate (not just version bumps): HMR or an
