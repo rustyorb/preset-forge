@@ -240,6 +240,28 @@ npx esbuild tests/roundtrip.ts --bundle --format=esm --platform=node \
   --outfile=/tmp/rt.mjs && node /tmp/rt.mjs [path-to-preset.json]
 ```
 
+## 🙏 Lineage
+
+This tool stands on other people's work, and says so:
+
+- **[cha1latte's sillytavern-preset-creator](https://github.com/cha1latte/sillytavern-preset-creator)** —
+  the seed. Its three-part guide to AI-authored presets shaped this app's module
+  patterns, tier thinking, and defaults strategy — and chasing its format claims
+  down against SillyTavern's actual source became the founding discipline here:
+  *verify everything, trust code over lore.* This project exists because that
+  guide asked the right question first.
+- **[NemoVonNirgend](https://github.com/NemoVonNirgend/NemoEngine)** — NemoEngine
+  is the stress-test fixture and the proof that presets became programs;
+  NemoPresetExt's conventions inform the section system, and NemoGuides'
+  Prompt Advisor inspired 🎯.
+- **[LenAnderson](https://github.com/LenAnderson/SillyTavern-LALib)** — LALib's
+  98 commands power the QR generator's richest mode. H A I L Lenny.
+- **[Nativu5's STPresetEditor](https://github.com/Nativu5/STPresetEditor)** —
+  prior art for visual preset editing; its variable find-usages set the bar the
+  Vars tab aims at.
+- **[The SillyTavern team](https://github.com/SillyTavern/SillyTavern)** — the
+  platform all of this orbits.
+
 ## 📁 Layout
 
 ```
