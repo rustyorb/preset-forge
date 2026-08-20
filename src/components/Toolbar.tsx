@@ -185,6 +185,13 @@ export default function Toolbar() {
           🧰
         </button>
         <button
+          onClick={() => useForge.getState().setTcOpen(true)}
+          className="rounded bg-zinc-800 px-2 py-1 text-sm hover:bg-zinc-700"
+          title="Text Completion templates: instruct / context / system prompt"
+        >
+          🧩
+        </button>
+        <button
           onClick={() => setSnapshotsOpen(true)}
           className="rounded bg-zinc-800 px-2 py-1 text-sm hover:bg-zinc-700"
           title="Snapshots: save/restore/diff versions of this preset"

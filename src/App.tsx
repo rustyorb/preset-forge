@@ -9,6 +9,7 @@ import SettingsModal from './components/SettingsModal';
 import WizardModal from './components/WizardModal';
 import CommandPalette from './components/CommandPalette';
 import SnapshotsModal from './components/SnapshotsModal';
+import TcModal from './components/TcModal';
 
 export default function App() {
   const addModule = useForge((s) => s.addModule);
@@ -89,6 +90,7 @@ export default function App() {
       <AdvisorModal />
       <CommandPalette />
       <SnapshotsModal />
+      <TcModal />
     </div>
   );
 }

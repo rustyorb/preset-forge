@@ -8,6 +8,7 @@ import { groupSiblings } from './lib/groups';
 import { generateReadmeContent } from './lib/readme';
 import { writeRegexScripts, type RegexScript } from './lib/regex';
 import { pushSnapshot } from './lib/snapshots';
+import type { TcKind, TcTemplate } from './lib/tcTemplates';
 
 interface ForgeState {
   /** preset library: id -> preset; activeId always exists in the map */
@@ -54,6 +55,12 @@ interface ForgeState {
   restorePreset: (preset: WorkingPreset) => void;
   snapshotsOpen: boolean;
   setSnapshotsOpen: (open: boolean) => void;
+  /** Text Completion template slots (instruct / context / sysprompt) */
+  tc: Partial<Record<TcKind, TcTemplate>>;
+  setTcTemplate: (kind: TcKind, tpl: TcTemplate | null) => void;
+  updateTcField: (kind: TcKind, key: string, value: unknown) => void;
+  tcOpen: boolean;
+  setTcOpen: (open: boolean) => void;
   setCard: (card: CardData | null) => void;
   setProvider: (p: ProviderConfig) => void;
   setWizardOpen: (open: boolean) => void;
@@ -412,6 +419,23 @@ export const useForge = create<ForgeState>()(
         snapshotsOpen: false,
         setSnapshotsOpen: (snapshotsOpen) => set({ snapshotsOpen }),
 
+        tc: {},
+        setTcTemplate: (kind, tpl) =>
+          set((s) => {
+            const tc = { ...s.tc };
+            if (tpl) tc[kind] = tpl;
+            else delete tc[kind];
+            return { tc };
+          }),
+        updateTcField: (kind, key, value) =>
+          set((s) => {
+            const cur = s.tc[kind];
+            if (!cur) return s;
+            return { tc: { ...s.tc, [kind]: { ...cur, [key]: value } } };
+          }),
+        tcOpen: false,
+        setTcOpen: (tcOpen) => set({ tcOpen }),
+
         setCard: (card) => set({ card }),
         setProvider: (provider) => set({ provider }),
         setWizardOpen: (wizardOpen) => set({ wizardOpen }),
@@ -429,6 +453,7 @@ export const useForge = create<ForgeState>()(
         provider: s.provider,
         card: s.card,
         library: s.library,
+        tc: s.tc,
       }),
       migrate: (persisted) => persisted,
       // Shape-normalize on EVERY rehydrate (not just version bumps): HMR or an
@@ -474,6 +499,7 @@ export const useForge = create<ForgeState>()(
           provider,
           card: p.card ?? null,
           library: (p as { library?: PromptEntry[] }).library ?? [],
+          tc: (p as { tc?: Partial<Record<TcKind, TcTemplate>> }).tc ?? {},
         };
       },
     },
