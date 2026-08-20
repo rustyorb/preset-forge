@@ -1,0 +1,41 @@
+<svg width="1200" height="280" viewBox="0 0 1200 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PresetForge — A generative, visual builder for SillyTavern preset kits.">
+  <!-- rustyorb banner template. Replace PresetForge, A generative, visual builder for SillyTavern preset kits., ⚒,
+       and the accent #8b5cf6 (5 occurrences) with a per-project color.
+       Self-contained on purpose: GitHub's camo proxy strips external refs. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d0b14"/>
+      <stop offset="0.55" stop-color="#141020"/>
+      <stop offset="1" stop-color="#0a0910"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.82" cy="0.25" r="0.75">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.22"/>
+      <stop offset="0.5" stop-color="#8b5cf6" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#ffffff" stroke-opacity="0.035" stroke-width="1"/>
+    </pattern>
+    <linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#8b5cf6" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="280" fill="url(#bg)"/>
+  <rect width="1200" height="280" fill="url(#grid)"/>
+  <rect width="1200" height="280" fill="url(#glow)"/>
+
+  <!-- corner ticks -->
+  <path d="M 24 40 L 24 24 L 40 24" fill="none" stroke="#8b5cf6" stroke-opacity="0.7" stroke-width="2"/>
+  <path d="M 1176 240 L 1176 256 L 1160 256" fill="none" stroke="#8b5cf6" stroke-opacity="0.7" stroke-width="2"/>
+
+  <!-- glyph -->
+  <text x="1080" y="165" font-size="120" text-anchor="middle" opacity="0.9">⚒</text>
+
+  <!-- title + tagline -->
+  <text x="80" y="138" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="64" font-weight="800" fill="#f2ecdd" letter-spacing="1">PresetForge</text>
+  <rect x="82" y="158" width="360" height="3" fill="url(#rule)"/>
+  <text x="80" y="200" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="23" fill="#b0a6c9">A generative, visual builder for SillyTavern preset kits.</text>
+</svg>
