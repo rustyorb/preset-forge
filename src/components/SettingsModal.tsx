@@ -10,7 +10,10 @@ type FetchState =
   | { kind: 'error'; message: string };
 
 export default function SettingsModal() {
-  const { provider, setProvider, settingsOpen, setSettingsOpen } = useForge();
+  const provider = useForge((s) => s.provider);
+  const setProvider = useForge((s) => s.setProvider);
+  const settingsOpen = useForge((s) => s.settingsOpen);
+  const setSettingsOpen = useForge((s) => s.setSettingsOpen);
   const [fetch, setFetch] = useState<FetchState>({ kind: 'idle' });
   const runId = useRef(0);
 

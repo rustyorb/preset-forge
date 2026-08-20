@@ -3,7 +3,11 @@ import { useActivePreset, useForge } from '../store';
 import { deleteSnapshot, diffPresets, loadSnapshots } from '../lib/snapshots';
 
 export default function SnapshotsModal() {
-  const { snapshotsOpen, setSnapshotsOpen, activeId, takeSnapshot, restorePreset } = useForge();
+  const snapshotsOpen = useForge((s) => s.snapshotsOpen);
+  const setSnapshotsOpen = useForge((s) => s.setSnapshotsOpen);
+  const activeId = useForge((s) => s.activeId);
+  const takeSnapshot = useForge((s) => s.takeSnapshot);
+  const restorePreset = useForge((s) => s.restorePreset);
   const preset = useActivePreset();
   const [refresh, setRefresh] = useState(0);
   const [diffIdx, setDiffIdx] = useState<number | null>(null);

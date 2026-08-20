@@ -16,8 +16,13 @@ function numericHandler(commit: (n: number) => void) {
 
 export default function Editor() {
   const preset = useActivePreset();
-  const { selectedId, updatePrompt, removeModule, provider, jumpTo, setJumpTo, saveToLibrary } =
-    useForge();
+  const selectedId = useForge((s) => s.selectedId);
+  const updatePrompt = useForge((s) => s.updatePrompt);
+  const removeModule = useForge((s) => s.removeModule);
+  const provider = useForge((s) => s.provider);
+  const jumpTo = useForge((s) => s.jumpTo);
+  const setJumpTo = useForge((s) => s.setJumpTo);
+  const saveToLibrary = useForge((s) => s.saveToLibrary);
   const [refineText, setRefineText] = useState('');
   const [proposed, setProposed] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

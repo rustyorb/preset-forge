@@ -5,7 +5,11 @@ import { adviseModules, type AdvisorRec } from '../lib/gen';
 type Phase = 'running' | 'result' | 'error';
 
 export default function AdvisorModal() {
-  const { advisorOpen, setAdvisorOpen, provider, card, setEnabled } = useForge();
+  const advisorOpen = useForge((s) => s.advisorOpen);
+  const setAdvisorOpen = useForge((s) => s.setAdvisorOpen);
+  const provider = useForge((s) => s.provider);
+  const card = useForge((s) => s.card);
+  const setEnabled = useForge((s) => s.setEnabled);
   const preset = useActivePreset();
   const [phase, setPhase] = useState<Phase>('running');
   const [recs, setRecs] = useState<AdvisorRec[]>([]);

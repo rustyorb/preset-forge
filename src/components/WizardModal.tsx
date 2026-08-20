@@ -8,7 +8,10 @@ import type { PromptEntry } from '../lib/types';
 type Phase = 'describe' | 'planning' | 'plan' | 'generating' | 'error';
 
 export default function WizardModal() {
-  const { wizardOpen, setWizardOpen, provider, applyWizard } = useForge();
+  const wizardOpen = useForge((s) => s.wizardOpen);
+  const setWizardOpen = useForge((s) => s.setWizardOpen);
+  const provider = useForge((s) => s.provider);
+  const applyWizard = useForge((s) => s.applyWizard);
   const preset = useActivePreset();
   const [phase, setPhase] = useState<Phase>('describe');
   const [description, setDescription] = useState('');

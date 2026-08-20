@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { useActivePreset, useForge } from '../store';
 import { assemblePreview, sceneFromCard } from '../lib/assemble';
 import { parseCardFile } from '../lib/cards';
@@ -26,16 +26,26 @@ const SOURCE_BADGE: Record<string, string> = {
 };
 
 export default function Preview() {
-  const preset = useActivePreset();
-  const { select, setJumpTo, card, setCard, setAdvisorOpen, provider, renamePromptContent } =
-    useForge();
+  const livePreset = useActivePreset();
+  const select = useForge((s) => s.select);
+  const setJumpTo = useForge((s) => s.setJumpTo);
+  const card = useForge((s) => s.card);
+  const setCard = useForge((s) => s.setCard);
+  const setAdvisorOpen = useForge((s) => s.setAdvisorOpen);
+  const providerModel = useForge((s) => s.provider.model);
+  const renamePromptContent = useForge((s) => s.renamePromptContent);
   const [tab, setTab] = useState<'context' | 'lint' | 'vars' | 'regex'>('context');
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameTo, setRenameTo] = useState('');
   const cardFileRef = useRef<HTMLInputElement>(null);
 
+  // Deferred: keystrokes commit to the textarea first; analyses catch up after.
+  const preset = useDeferredValue(livePreset);
   const scene = useMemo(() => (card ? sceneFromCard(card) : undefined), [card]);
-  const blocks = useMemo(() => assemblePreview(preset, scene), [preset, scene]);
+  const blocks = useMemo(
+    () => (tab === 'context' ? assemblePreview(preset, scene) : []),
+    [preset, scene, tab],
+  );
   const findings = useMemo(() => lintPreset(preset), [preset]);
   const vars = useMemo(() => analyzeVariables(preset), [preset]);
   const errs = findings.filter((f) => f.level === 'error').length;
@@ -118,11 +128,11 @@ export default function Preview() {
         )}
         <button
           onClick={() => setAdvisorOpen(true)}
-          disabled={!card || !provider.model}
+          disabled={!card || !providerModel}
           title={
             !card
               ? 'Load a character card first'
-              : !provider.model
+              : !providerModel
                 ? 'Configure a provider first (⚙)'
                 : 'AI-recommend module toggles for this character'
           }

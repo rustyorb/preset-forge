@@ -9,19 +9,17 @@ export default function Toolbar() {
   const preset = useActivePreset();
   const presets = useForge((s) => s.presets);
   const activeId = useForge((s) => s.activeId);
-  const {
-    importRaw,
-    newPresetSlot,
-    duplicatePreset,
-    deletePreset,
-    switchPreset,
-    setName,
-    setWizardOpen,
-    setSettingsOpen,
-    setSnapshotsOpen,
-    setParam,
-    upsertReadme,
-  } = useForge();
+  const importRaw = useForge((s) => s.importRaw);
+  const newPresetSlot = useForge((s) => s.newPresetSlot);
+  const duplicatePreset = useForge((s) => s.duplicatePreset);
+  const deletePreset = useForge((s) => s.deletePreset);
+  const switchPreset = useForge((s) => s.switchPreset);
+  const setName = useForge((s) => s.setName);
+  const setWizardOpen = useForge((s) => s.setWizardOpen);
+  const setSettingsOpen = useForge((s) => s.setSettingsOpen);
+  const setSnapshotsOpen = useForge((s) => s.setSnapshotsOpen);
+  const setParam = useForge((s) => s.setParam);
+  const upsertReadme = useForge((s) => s.upsertReadme);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const stats = useMemo(() => presetTokenStats(preset), [preset]);
